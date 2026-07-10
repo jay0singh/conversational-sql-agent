@@ -34,12 +34,25 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 2. Apply the schema: paste
    `supabase/migrations/001_initial_schema.sql` into the Supabase SQL editor
    (or `supabase db push` with the CLI).
-3. ETL setup — coming with the next feature.
+3. Install dependencies and configure the connection:
+
+   ```sh
+   pip install -r requirements.txt
+   cp .env.example .env   # then fill in your Session-pooler connection string
+   ```
+
+4. Load a season of race results:
+
+   ```sh
+   python -m etl.pipeline --season 2024
+   ```
+
+   Re-running is safe — every load is an idempotent upsert on natural keys.
 
 ## Roadmap
 
 - [x] 1. Repo scaffolding + Supabase schema migration
-- [ ] 2. Vertical slice for `results`: extract → transform → load
+- [x] 2. Vertical slice for `results`: extract → transform → load
 - [ ] 3. Dimension tables: drivers, constructors, circuits, races
 - [ ] 4. `sprint_results`
 - [ ] 5. `qualifying_results`
