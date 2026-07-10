@@ -18,6 +18,43 @@ def _time(value: str | None) -> str | None:
     return value.rstrip("Z") if value else None
 
 
+def _circuit_row(circuit: dict) -> dict:
+    location = circuit.get("Location", {})
+    return {
+        "circuit_id": circuit["circuitId"],
+        "name": circuit["circuitName"],
+        "location": location.get("locality"),
+        "country": location.get("country"),
+        "lat": float(location["lat"]) if location.get("lat") else None,
+        "long": float(location["long"]) if location.get("long") else None,
+    }
+
+
+def _race_row(race: dict) -> dict:
+    return {
+        "season": int(race["season"]),
+        "round": int(race["round"]),
+        "circuit_id": race["Circuit"]["circuitId"],
+        "name": race["raceName"],
+        "date": race["date"],
+        "time": _time(race.get("time")),
+    }
+
+
+def transform_calendar(races: list[dict]) -> dict[str, list[dict]]:
+    """Flatten a season-calendar response into circuits + races row sets.
+
+    Covers races that have no results yet (future rounds), which the
+    results endpoint can never surface.
+    """
+    circuits: dict[str, dict] = {}
+    race_rows: list[dict] = []
+    for race in races:
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        race_rows.append(_race_row(race))
+    return {"circuits": list(circuits.values()), "races": race_rows}
+
+
 def transform_results(races: list[dict]) -> dict[str, list[dict]]:
     """Flatten a season's merged race-results JSON into table row sets."""
     circuits: dict[str, dict] = {}
@@ -27,26 +64,9 @@ def transform_results(races: list[dict]) -> dict[str, list[dict]]:
     result_rows: list[dict] = []
 
     for race in races:
-        circuit = race["Circuit"]
-        circuits[circuit["circuitId"]] = {
-            "circuit_id": circuit["circuitId"],
-            "name": circuit["circuitName"],
-            "location": circuit.get("Location", {}).get("locality"),
-            "country": circuit.get("Location", {}).get("country"),
-            "lat": float(circuit["Location"]["lat"]) if circuit.get("Location", {}).get("lat") else None,
-            "long": float(circuit["Location"]["long"]) if circuit.get("Location", {}).get("long") else None,
-        }
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        race_rows.append(_race_row(race))
         season, round_no = int(race["season"]), int(race["round"])
-        race_rows.append(
-            {
-                "season": season,
-                "round": round_no,
-                "circuit_id": circuit["circuitId"],
-                "name": race["raceName"],
-                "date": race["date"],
-                "time": _time(race.get("time")),
-            }
-        )
         for result in race.get("Results", []):
             driver, constructor = result["Driver"], result["Constructor"]
             drivers[driver["driverId"]] = {

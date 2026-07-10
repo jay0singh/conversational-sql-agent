@@ -1,8 +1,7 @@
 """Run ETL pipelines end to end.
 
-Currently supports the race-results slice for one season:
-
-    python -m etl.pipeline --season 2024
+    python -m etl.pipeline --season 2024                      # race results
+    python -m etl.pipeline --season 2026 --dataset calendar   # full season schedule
 
 backfill.py and incremental.py (later features) call the same functions.
 """
@@ -12,8 +11,8 @@ from __future__ import annotations
 import argparse
 
 from etl.extract import JolpicaClient
-from etl.load import get_connection, load_results_bundle
-from etl.transform import transform_results
+from etl.load import get_connection, load_calendar_bundle, load_results_bundle
+from etl.transform import transform_calendar, transform_results
 
 
 def run_results(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
@@ -27,12 +26,32 @@ def run_results(season: int, client: JolpicaClient | None = None) -> dict[str, i
         conn.close()
 
 
+def run_calendar(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
+    client = client or JolpicaClient()
+    races = client.fetch_season_calendar(season)
+    bundle = transform_calendar(races)
+    conn = get_connection()
+    try:
+        return load_calendar_bundle(conn, bundle)
+    finally:
+        conn.close()
+
+
+RUNNERS = {"results": run_results, "calendar": run_calendar}
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Load one season's race results into Supabase.")
+    parser = argparse.ArgumentParser(description="Load one season's data into Supabase.")
     parser.add_argument("--season", type=int, required=True, help="e.g. 2024")
+    parser.add_argument(
+        "--dataset", choices=RUNNERS, default="results", help="what to load (default: results)"
+    )
     args = parser.parse_args()
-    counts = run_results(args.season)
-    print(f"season {args.season} upserted: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+    counts = RUNNERS[args.dataset](args.season)
+    print(
+        f"season {args.season} {args.dataset} upserted: "
+        + ", ".join(f"{k}={v}" for k, v in counts.items())
+    )
 
 
 if __name__ == "__main__":

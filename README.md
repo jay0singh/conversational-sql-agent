@@ -41,10 +41,11 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    cp .env.example .env   # then fill in your Session-pooler connection string
    ```
 
-4. Load a season of race results:
+4. Load data:
 
    ```sh
-   python -m etl.pipeline --season 2024
+   python -m etl.pipeline --season 2024                      # race results
+   python -m etl.pipeline --season 2026 --dataset calendar   # full schedule, incl. future races
    ```
 
    Re-running is safe — every load is an idempotent upsert on natural keys.
@@ -53,7 +54,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 
 - [x] 1. Repo scaffolding + Supabase schema migration
 - [x] 2. Vertical slice for `results`: extract → transform → load
-- [ ] 3. Dimension tables: drivers, constructors, circuits, races
+- [x] 3. Dimension tables: drivers, constructors, circuits, races (+ season calendar fetch)
 - [ ] 4. `sprint_results`
 - [ ] 5. `qualifying_results`
 - [ ] 6. `pitstops`

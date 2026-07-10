@@ -46,6 +46,15 @@ def _race_id_map(cur, seasons: set[int]) -> dict[tuple[int, int], int]:
     return {(season, rnd): race_id for season, rnd, race_id in cur.fetchall()}
 
 
+def load_calendar_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    """Upsert a transform_calendar() bundle: circuits, then races."""
+    counts: dict[str, int] = {}
+    with conn, conn.cursor() as cur:
+        counts["circuits"] = upsert(cur, "circuits", bundle["circuits"], ["circuit_id"])
+        counts["races"] = upsert(cur, "races", bundle["races"], ["season", "round"])
+    return counts
+
+
 def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     """Upsert a transform_results() bundle inside one transaction.
 

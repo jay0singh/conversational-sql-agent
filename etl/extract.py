@@ -72,6 +72,21 @@ class JolpicaClient:
             resp.raise_for_status()
         raise JolpicaError(f"{url} (offset={offset}) still failing after {MAX_RETRIES} attempts")
 
+    def fetch_season_calendar(self, season: int | str) -> list[dict]:
+        """Return every race on a season's calendar, raced or not.
+
+        Unlike /results, the leaf item here is the race itself (no Results
+        arrays to merge) — pages just concatenate.
+        """
+        races: list[dict] = []
+        offset = 0
+        while True:
+            data = self.get_page(str(season), offset=offset)
+            races.extend(data["RaceTable"]["Races"])
+            offset += int(data["limit"])
+            if offset >= int(data["total"]):
+                return races
+
     def fetch_season_results(self, season: int | str) -> list[dict]:
         """Return all races of a season, each with its complete Results list.
 
