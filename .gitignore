@@ -1,0 +1,20 @@
+# Environments & secrets
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node (React frontend, later)
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
