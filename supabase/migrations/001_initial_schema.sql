@@ -2,10 +2,11 @@
 -- F1 Conversational SQL Agent — initial schema.
 --
 -- Source: Jolpica F1 API (Ergast-compatible). Coverage: seasons 2010+.
--- Jolpica's stable string identifiers (driverId 'hamilton', constructorId
--- 'mercedes', circuitId 'monza') are used directly as primary keys so ETL
--- upserts can target ON CONFLICT on natural keys and stay idempotent.
--- Fact tables get a surrogate identity PK plus a UNIQUE natural key.
+-- Every table owns a surrogate integer primary key, and all foreign keys
+-- reference those integers. Jolpica's stable string identifiers (driverId
+-- 'hamilton', constructorId 'mercedes', circuitId 'monza') are kept as
+-- UNIQUE *_ref columns — they are the upsert targets that keep ETL runs
+-- idempotent, but they never participate in foreign keys.
 --
 -- Apply via the Supabase SQL editor, or `supabase db push` with the CLI.
 
@@ -14,17 +15,19 @@ begin;
 -- ── Dimension tables ────────────────────────────────────────────────────────
 
 create table if not exists circuits (
-    circuit_id text primary key,
-    name       text not null,
-    location   text,
-    country    text,
-    lat        double precision,
-    long       double precision
+    circuit_id  bigint generated always as identity primary key,
+    circuit_ref text not null unique,  -- Jolpica circuitId, e.g. 'monza'
+    name        text not null,
+    location    text,
+    country     text,
+    lat         double precision,
+    long        double precision
 );
 
 create table if not exists drivers (
-    driver_id   text primary key,
-    code        text,  -- three-letter broadcast code; null for a few drivers
+    driver_id   bigint generated always as identity primary key,
+    driver_ref  text not null unique,  -- Jolpica driverId, e.g. 'hamilton'
+    code        text,                  -- three-letter broadcast code; null for a few drivers
     given_name  text not null,
     family_name text not null,
     dob         date,
@@ -32,16 +35,17 @@ create table if not exists drivers (
 );
 
 create table if not exists constructors (
-    constructor_id text primary key,
-    name           text not null,
-    nationality    text
+    constructor_id  bigint generated always as identity primary key,
+    constructor_ref text not null unique,  -- Jolpica constructorId, e.g. 'mercedes'
+    name            text not null,
+    nationality     text
 );
 
 create table if not exists races (
     race_id    bigint generated always as identity primary key,
     season     integer not null,
     round      integer not null,
-    circuit_id text    not null references circuits (circuit_id),
+    circuit_id bigint  not null references circuits (circuit_id),
     name       text    not null,
     date       date    not null,
     time       time,  -- null when the API provides no start time
@@ -49,7 +53,7 @@ create table if not exists races (
 );
 
 create table if not exists status (
-    status_id integer primary key,  -- Jolpica statusId
+    status_id integer primary key,  -- Jolpica statusId (already an integer key)
     status    text not null
 );
 
@@ -58,8 +62,8 @@ create table if not exists status (
 create table if not exists results (
     id               bigint  generated always as identity primary key,
     race_id          bigint  not null references races (race_id),
-    driver_id        text    not null references drivers (driver_id),
-    constructor_id   text    not null references constructors (constructor_id),
+    driver_id        bigint  not null references drivers (driver_id),
+    constructor_id   bigint  not null references constructors (constructor_id),
     grid             integer,
     position         integer,  -- null when unclassified (DNF/DSQ have positionText only)
     points           numeric(6, 2) not null default 0,  -- numeric: half-points races exist
@@ -73,8 +77,8 @@ create table if not exists results (
 create table if not exists sprint_results (
     id             bigint  generated always as identity primary key,
     race_id        bigint  not null references races (race_id),
-    driver_id      text    not null references drivers (driver_id),
-    constructor_id text    not null references constructors (constructor_id),
+    driver_id      bigint  not null references drivers (driver_id),
+    constructor_id bigint  not null references constructors (constructor_id),
     grid           integer,
     position       integer,
     points         numeric(6, 2) not null default 0,
@@ -86,8 +90,8 @@ create table if not exists sprint_results (
 create table if not exists qualifying_results (
     id             bigint  generated always as identity primary key,
     race_id        bigint  not null references races (race_id),
-    driver_id      text    not null references drivers (driver_id),
-    constructor_id text    not null references constructors (constructor_id),
+    driver_id      bigint  not null references drivers (driver_id),
+    constructor_id bigint  not null references constructors (constructor_id),
     position       integer,
     q1             text,  -- session times as reported, e.g. '1:26.572';
     q2             text,  -- null when the driver did not advance to the session
@@ -98,7 +102,7 @@ create table if not exists qualifying_results (
 create table if not exists pitstops (
     id          bigint  generated always as identity primary key,
     race_id     bigint  not null references races (race_id),
-    driver_id   text    not null references drivers (driver_id),
+    driver_id   bigint  not null references drivers (driver_id),
     stop_number integer not null,
     lap         integer,
     time        text,  -- local clock time of the stop, e.g. '14:05:11'
@@ -109,7 +113,7 @@ create table if not exists pitstops (
 create table if not exists laps (
     id         bigint  generated always as identity primary key,
     race_id    bigint  not null references races (race_id),
-    driver_id  text    not null references drivers (driver_id),
+    driver_id  bigint  not null references drivers (driver_id),
     lap_number integer not null,
     position   integer,
     time       text,  -- lap time as reported, e.g. '1:29.844'
@@ -120,7 +124,7 @@ create table if not exists driver_standings (
     id        bigint  generated always as identity primary key,
     season    integer not null,
     round     integer not null,
-    driver_id text    not null references drivers (driver_id),
+    driver_id bigint  not null references drivers (driver_id),
     points    numeric(7, 2) not null default 0,
     position  integer,
     wins      integer not null default 0,
@@ -131,7 +135,7 @@ create table if not exists constructor_standings (
     id             bigint  generated always as identity primary key,
     season         integer not null,
     round          integer not null,
-    constructor_id text    not null references constructors (constructor_id),
+    constructor_id bigint  not null references constructors (constructor_id),
     points         numeric(7, 2) not null default 0,
     position       integer,
     wins           integer not null default 0,
@@ -152,7 +156,7 @@ comment on column results.time_millis is
     'Total race time in milliseconds; null for lapped or retired drivers.';
 
 -- ── Indexes for the join paths the agent will generate ─────────────────────
--- (race_id lookups are covered by each UNIQUE constraint''s leading column.)
+-- (race_id lookups are covered by each UNIQUE constraint's leading column.)
 
 create index if not exists idx_results_driver         on results (driver_id);
 create index if not exists idx_results_constructor    on results (constructor_id);
