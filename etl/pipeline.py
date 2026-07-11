@@ -40,6 +40,7 @@ from etl.transform import (
 )
 
 FIRST_PITSTOP_SEASON = 2011  # the API has no pit-stop data before this
+FIRST_SPRINT_SEASON = 2021  # sprint format introduced in 2021
 
 
 def run_results(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
@@ -65,6 +66,9 @@ def run_calendar(season: int, client: JolpicaClient | None = None) -> dict[str, 
 
 
 def run_sprints(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
+    if season < FIRST_SPRINT_SEASON:
+        # Skip the API round trip; there is nothing to fetch.
+        return {"circuits": 0, "drivers": 0, "constructors": 0, "races": 0, "sprint_results": 0}
     client = client or JolpicaClient()
     races = client.fetch_season_sprints(season)
     bundle = transform_sprint_results(races)

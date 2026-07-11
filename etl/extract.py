@@ -18,7 +18,12 @@ BASE_URL = "https://api.jolpi.ca/ergast/f1"
 PAGE_SIZE = 100  # Jolpica's documented maximum
 HOURLY_BUDGET = 450  # headroom under the 500/hour cap
 BURST_INTERVAL = 0.3  # seconds between requests, under the 4/s burst limit
-MAX_RETRIES = 5
+MAX_RETRIES = 5  # network errors / 5xx
+# 429s are not failures — they mean "the hourly window is spent" (possibly by
+# another process sharing our IP, which our own sliding window can't see).
+# Waiting is always eventually correct, so be patient: 20 waits with a 60s
+# floor and 300s cap rides out even a fully burned window (~70 min total).
+MAX_THROTTLE_WAITS = 20
 
 
 class JolpicaError(RuntimeError):
@@ -47,12 +52,17 @@ class JolpicaClient:
     def get_page(self, path: str, offset: int = 0, limit: int = PAGE_SIZE) -> dict:
         """GET one page of `path` and return the MRData envelope.
 
-        Retries 429s and 5xx with exponential backoff (honouring Retry-After);
-        other 4xx are bugs in our request and raise immediately.
+        Failure handling is two-track: network errors and 5xx are genuine
+        failures retried MAX_RETRIES times with exponential backoff, while
+        429s are patient waits (Retry-After honoured, 60s floor, 300s cap,
+        up to MAX_THROTTLE_WAITS) since a spent rate window always frees up.
+        Other 4xx are bugs in our request and raise immediately.
         """
         url = f"{BASE_URL}/{path}.json"
         backoff = 2.0
-        for _ in range(MAX_RETRIES):
+        failures = 0
+        throttles = 0
+        while True:
             self._respect_rate_limits()
             self._request_times.append(time.monotonic())
             try:
@@ -60,18 +70,36 @@ class JolpicaClient:
                     url, params={"limit": limit, "offset": offset}, timeout=30
                 )
             except requests.RequestException:
+                failures += 1
+                if failures >= MAX_RETRIES:
+                    raise JolpicaError(
+                        f"{url} (offset={offset}): {failures} network failures"
+                    )
                 time.sleep(backoff)
                 backoff *= 2
                 continue
             if resp.status_code == 200:
                 return resp.json()["MRData"]
-            if resp.status_code == 429 or resp.status_code >= 500:
+            if resp.status_code == 429:
+                throttles += 1
+                if throttles >= MAX_THROTTLE_WAITS:
+                    raise JolpicaError(
+                        f"{url} (offset={offset}): still throttled after {throttles} waits"
+                    )
                 retry_after = float(resp.headers.get("Retry-After") or 0)
-                time.sleep(max(retry_after, backoff))
+                time.sleep(max(retry_after, min(backoff, 300.0), 60.0))
+                backoff = min(backoff * 2, 300.0)
+                continue
+            if resp.status_code >= 500:
+                failures += 1
+                if failures >= MAX_RETRIES:
+                    raise JolpicaError(
+                        f"{url} (offset={offset}): {failures} server errors"
+                    )
+                time.sleep(max(float(resp.headers.get("Retry-After") or 0), backoff))
                 backoff *= 2
                 continue
             resp.raise_for_status()
-        raise JolpicaError(f"{url} (offset={offset}) still failing after {MAX_RETRIES} attempts")
 
     def fetch_season_calendar(self, season: int | str) -> list[dict]:
         """Return every race on a season's calendar, raced or not.

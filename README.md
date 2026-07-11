@@ -31,9 +31,9 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 ## Getting started
 
 1. Create a Supabase project.
-2. Apply the schema: paste
-   `supabase/migrations/001_initial_schema.sql` into the Supabase SQL editor
-   (or `supabase db push` with the CLI).
+2. Apply the migrations in [`supabase/migrations/`](supabase/migrations/) in
+   numeric order (001 schema, 002 ETL checkpoints) — paste into the Supabase
+   SQL editor, or `supabase db push` with the CLI.
 3. Install dependencies and configure the connection:
 
    ```sh
@@ -41,7 +41,18 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    cp .env.example .env   # then fill in your Session-pooler connection string
    ```
 
-4. Load data:
+4. Load everything (2010 → current season):
+
+   ```sh
+   python -m etl.backfill
+   ```
+
+   This is a multi-hour job (thousands of rate-limited API requests). Progress
+   is checkpointed per (season, dataset) in `etl_state`, so interrupting and
+   re-running resumes where it stopped. Narrow the range with
+   `--start`/`--end`.
+
+5. Or load one season × dataset at a time:
 
    ```sh
    python -m etl.pipeline --season 2024                      # race results
@@ -67,7 +78,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 7. `laps`
 - [x] 8. `driver_standings` + `constructor_standings`
 - [x] 9. `status` lookup
-- [ ] 10. Backfill with checkpointing (`etl_state`)
+- [x] 10. Backfill with checkpointing (`etl_state`)
 - [ ] 11. Weekly incremental sync
 - [ ] 12. Post-load data quality checks
 - [ ] 13. GitHub Actions workflows
