@@ -52,6 +52,12 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    re-running resumes where it stopped. Narrow the range with
    `--start`/`--end`.
 
+   After each Grand Prix, sync just the latest round (~22 requests):
+
+   ```sh
+   python -m etl.incremental
+   ```
+
 5. Or load one season × dataset at a time:
 
    ```sh
@@ -79,6 +85,6 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 8. `driver_standings` + `constructor_standings`
 - [x] 9. `status` lookup
 - [x] 10. Backfill with checkpointing (`etl_state`)
-- [ ] 11. Weekly incremental sync
+- [x] 11. Weekly incremental sync
 - [ ] 12. Post-load data quality checks
 - [ ] 13. GitHub Actions workflows

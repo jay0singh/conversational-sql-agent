@@ -216,6 +216,38 @@ class JolpicaClient:
                 constructor_lists.append(constructors)
         return driver_lists, constructor_lists
 
+    def fetch_latest_round(self) -> tuple[int, int]:
+        """(season, round) of the most recently completed race, via /current/last."""
+        race = self.get_page("current/last")["RaceTable"]["Races"][0]
+        return int(race["season"]), int(race["round"])
+
+    def fetch_round_results(self, season: int | str, round_no: int | str) -> list[dict]:
+        return self._fetch_season_races(f"{season}/{round_no}/results", "Results")
+
+    def fetch_round_sprints(self, season: int | str, round_no: int | str) -> list[dict]:
+        return self._fetch_season_races(f"{season}/{round_no}/sprint", "SprintResults")
+
+    def fetch_round_qualifying(self, season: int | str, round_no: int | str) -> list[dict]:
+        return self._fetch_season_races(f"{season}/{round_no}/qualifying", "QualifyingResults")
+
+    def fetch_round_pitstops(self, season: int | str, round_no: int | str) -> list[dict]:
+        return self._fetch_season_races(f"{season}/{round_no}/pitstops", "PitStops")
+
+    def fetch_round_laps(self, season: int | str, round_no: int | str) -> list[dict]:
+        return self._fetch_season_races(f"{season}/{round_no}/laps", "Laps")
+
+    def fetch_round_standings(
+        self, season: int | str, round_no: int | str
+    ) -> tuple[list[dict], list[dict]]:
+        """One round's (driver_lists, constructor_lists), shaped for transform_standings."""
+        drivers = self._fetch_round_standings(
+            season, round_no, "driverStandings", "DriverStandings"
+        )
+        constructors = self._fetch_round_standings(
+            season, round_no, "constructorStandings", "ConstructorStandings"
+        )
+        return ([drivers] if drivers else []), ([constructors] if constructors else [])
+
     def fetch_season_status(self, season: int | str) -> list[dict]:
         """Finishing-status entries seen in a season (statusId, status, count)."""
         statuses: list[dict] = []
