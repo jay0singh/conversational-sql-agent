@@ -121,3 +121,7 @@ class JolpicaClient:
         seasons legitimately return an empty list.
         """
         return self._fetch_season_races(f"{season}/sprint", "SprintResults")
+
+    def fetch_season_qualifying(self, season: int | str) -> list[dict]:
+        """All races of a season with their QualifyingResults lists."""
+        return self._fetch_season_races(f"{season}/qualifying", "QualifyingResults")

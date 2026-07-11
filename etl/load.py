@@ -117,3 +117,7 @@ def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
 
 def load_sprint_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     return _load_fact_bundle(conn, bundle, "sprint_results")
+
+
+def load_qualifying_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    return _load_fact_bundle(conn, bundle, "qualifying_results")

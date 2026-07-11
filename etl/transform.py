@@ -160,3 +160,45 @@ def transform_sprint_results(races: list[dict]) -> dict[str, list[dict]]:
         "races": race_rows,
         "sprint_results": sprint_rows,
     }
+
+
+def transform_qualifying_results(races: list[dict]) -> dict[str, list[dict]]:
+    """Flatten a season's merged qualifying JSON into table row sets.
+
+    Q1/Q2/Q3 are session times as reported; a missing or empty value means
+    the driver did not run that session (eliminated, or no time set).
+    """
+    circuits: dict[str, dict] = {}
+    drivers: dict[str, dict] = {}
+    constructors: dict[str, dict] = {}
+    race_rows: list[dict] = []
+    qualifying_rows: list[dict] = []
+
+    for race in races:
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        race_rows.append(_race_row(race))
+        season, round_no = int(race["season"]), int(race["round"])
+        for result in race.get("QualifyingResults", []):
+            driver, constructor = result["Driver"], result["Constructor"]
+            drivers[driver["driverId"]] = _driver_row(driver)
+            constructors[constructor["constructorId"]] = _constructor_row(constructor)
+            qualifying_rows.append(
+                {
+                    "season": season,
+                    "round": round_no,
+                    "driver_ref": driver["driverId"],
+                    "constructor_ref": constructor["constructorId"],
+                    "position": _int(result.get("position")),
+                    "q1": result.get("Q1") or None,
+                    "q2": result.get("Q2") or None,
+                    "q3": result.get("Q3") or None,
+                }
+            )
+
+    return {
+        "circuits": list(circuits.values()),
+        "drivers": list(drivers.values()),
+        "constructors": list(constructors.values()),
+        "races": race_rows,
+        "qualifying_results": qualifying_rows,
+    }
