@@ -46,6 +46,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    ```sh
    python -m etl.pipeline --season 2024                      # race results
    python -m etl.pipeline --season 2026 --dataset calendar   # full schedule, incl. future races
+   python -m etl.pipeline --season 2024 --dataset sprint     # sprint results (2021+ only)
    ```
 
    Re-running is safe — every load is an idempotent upsert on natural keys.
@@ -55,7 +56,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 1. Repo scaffolding + Supabase schema migration
 - [x] 2. Vertical slice for `results`: extract → transform → load
 - [x] 3. Dimension tables: drivers, constructors, circuits, races (+ season calendar fetch)
-- [ ] 4. `sprint_results`
+- [x] 4. `sprint_results`
 - [ ] 5. `qualifying_results`
 - [ ] 6. `pitstops`
 - [ ] 7. `laps`

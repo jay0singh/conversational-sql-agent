@@ -44,6 +44,25 @@ def _race_row(race: dict) -> dict:
     }
 
 
+def _driver_row(driver: dict) -> dict:
+    return {
+        "driver_ref": driver["driverId"],
+        "code": driver.get("code"),
+        "given_name": driver["givenName"],
+        "family_name": driver["familyName"],
+        "dob": driver.get("dateOfBirth"),
+        "nationality": driver.get("nationality"),
+    }
+
+
+def _constructor_row(constructor: dict) -> dict:
+    return {
+        "constructor_ref": constructor["constructorId"],
+        "name": constructor["name"],
+        "nationality": constructor.get("nationality"),
+    }
+
+
 def transform_calendar(races: list[dict]) -> dict[str, list[dict]]:
     """Flatten a season-calendar response into circuits + races row sets.
 
@@ -72,19 +91,8 @@ def transform_results(races: list[dict]) -> dict[str, list[dict]]:
         season, round_no = int(race["season"]), int(race["round"])
         for result in race.get("Results", []):
             driver, constructor = result["Driver"], result["Constructor"]
-            drivers[driver["driverId"]] = {
-                "driver_ref": driver["driverId"],
-                "code": driver.get("code"),
-                "given_name": driver["givenName"],
-                "family_name": driver["familyName"],
-                "dob": driver.get("dateOfBirth"),
-                "nationality": driver.get("nationality"),
-            }
-            constructors[constructor["constructorId"]] = {
-                "constructor_ref": constructor["constructorId"],
-                "name": constructor["name"],
-                "nationality": constructor.get("nationality"),
-            }
+            drivers[driver["driverId"]] = _driver_row(driver)
+            constructors[constructor["constructorId"]] = _constructor_row(constructor)
             fastest = result.get("FastestLap", {})
             result_rows.append(
                 {
@@ -108,4 +116,47 @@ def transform_results(races: list[dict]) -> dict[str, list[dict]]:
         "constructors": list(constructors.values()),
         "races": race_rows,
         "results": result_rows,
+    }
+
+
+def transform_sprint_results(races: list[dict]) -> dict[str, list[dict]]:
+    """Flatten a season's merged sprint-results JSON into table row sets.
+
+    Same shape as transform_results minus the fastest-lap columns, which
+    sprint_results does not model.
+    """
+    circuits: dict[str, dict] = {}
+    drivers: dict[str, dict] = {}
+    constructors: dict[str, dict] = {}
+    race_rows: list[dict] = []
+    sprint_rows: list[dict] = []
+
+    for race in races:
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        race_rows.append(_race_row(race))
+        season, round_no = int(race["season"]), int(race["round"])
+        for result in race.get("SprintResults", []):
+            driver, constructor = result["Driver"], result["Constructor"]
+            drivers[driver["driverId"]] = _driver_row(driver)
+            constructors[constructor["constructorId"]] = _constructor_row(constructor)
+            sprint_rows.append(
+                {
+                    "season": season,
+                    "round": round_no,
+                    "driver_ref": driver["driverId"],
+                    "constructor_ref": constructor["constructorId"],
+                    "grid": _int(result.get("grid")),
+                    "position": _int(result.get("position")),
+                    "points": float(result.get("points") or 0),
+                    "status": result.get("status"),
+                    "time_millis": _int(result.get("Time", {}).get("millis")),
+                }
+            )
+
+    return {
+        "circuits": list(circuits.values()),
+        "drivers": list(drivers.values()),
+        "constructors": list(constructors.values()),
+        "races": race_rows,
+        "sprint_results": sprint_rows,
     }

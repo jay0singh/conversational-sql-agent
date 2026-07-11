@@ -87,22 +87,37 @@ class JolpicaClient:
             if offset >= int(data["total"]):
                 return races
 
-    def fetch_season_results(self, season: int | str) -> list[dict]:
-        """Return all races of a season, each with its complete Results list.
+    def _fetch_season_races(self, path: str, results_key: str) -> list[dict]:
+        """Fetch a per-race results endpoint, merging paginated races by round.
 
-        Pagination counts individual result rows, so one race's results can
-        span page boundaries; pages are merged by round before returning.
+        Pagination counts individual result rows, so one race's list can span
+        page boundaries; `results_key` names the per-race list to merge
+        ('Results', 'SprintResults', ...).
         """
         races_by_round: dict[int, dict] = {}
         offset = 0
         while True:
-            data = self.get_page(f"{season}/results", offset=offset)
+            data = self.get_page(path, offset=offset)
             for race in data["RaceTable"]["Races"]:
                 round_no = int(race["round"])
                 if round_no in races_by_round:
-                    races_by_round[round_no]["Results"].extend(race.get("Results", []))
+                    races_by_round[round_no].setdefault(results_key, []).extend(
+                        race.get(results_key, [])
+                    )
                 else:
                     races_by_round[round_no] = race
             offset += int(data["limit"])
             if offset >= int(data["total"]):
                 return [races_by_round[r] for r in sorted(races_by_round)]
+
+    def fetch_season_results(self, season: int | str) -> list[dict]:
+        """All races of a season with their complete Results lists."""
+        return self._fetch_season_races(f"{season}/results", "Results")
+
+    def fetch_season_sprints(self, season: int | str) -> list[dict]:
+        """Sprint races of a season with their SprintResults lists.
+
+        Sprints exist from 2021 onward at selected rounds only; earlier
+        seasons legitimately return an empty list.
+        """
+        return self._fetch_season_races(f"{season}/sprint", "SprintResults")

@@ -73,10 +73,12 @@ def load_calendar_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     return counts
 
 
-def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
-    """Upsert a transform_results() bundle inside one transaction.
+def _load_fact_bundle(conn, bundle: dict[str, list[dict]], fact_table: str) -> dict[str, int]:
+    """Upsert one per-race fact bundle inside a single transaction.
 
-    FK order: circuits -> drivers/constructors -> races -> results.
+    FK order: circuits -> drivers/constructors -> races -> fact rows. Fact
+    rows arrive keyed by refs + (season, round) and upsert on
+    (race_id, driver_id) after resolution.
     """
     counts: dict[str, int] = {}
     with conn, conn.cursor() as cur:
@@ -92,7 +94,7 @@ def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
         race_ids = _race_id_map(cur, {row["season"] for row in bundle["races"]})
         driver_ids = _ref_map(cur, "drivers", "driver_ref", "driver_id")
         constructor_ids = _ref_map(cur, "constructors", "constructor_ref", "constructor_id")
-        result_rows = [
+        fact_rows = [
             {
                 "race_id": race_ids[(row["season"], row["round"])],
                 "driver_id": driver_ids[row["driver_ref"]],
@@ -103,7 +105,15 @@ def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
                     if k not in ("season", "round", "driver_ref", "constructor_ref")
                 },
             }
-            for row in bundle["results"]
+            for row in bundle[fact_table]
         ]
-        counts["results"] = upsert(cur, "results", result_rows, ["race_id", "driver_id"])
+        counts[fact_table] = upsert(cur, fact_table, fact_rows, ["race_id", "driver_id"])
     return counts
+
+
+def load_results_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    return _load_fact_bundle(conn, bundle, "results")
+
+
+def load_sprint_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    return _load_fact_bundle(conn, bundle, "sprint_results")
