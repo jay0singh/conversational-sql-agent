@@ -188,6 +188,17 @@ class JolpicaClient:
                 constructor_lists.append(constructors)
         return driver_lists, constructor_lists
 
+    def fetch_season_status(self, season: int | str) -> list[dict]:
+        """Finishing-status entries seen in a season (statusId, status, count)."""
+        statuses: list[dict] = []
+        offset = 0
+        while True:
+            data = self.get_page(f"{season}/status", offset=offset)
+            statuses.extend(data["StatusTable"]["Status"])
+            offset += int(data["limit"])
+            if offset >= int(data["total"]):
+                return statuses
+
     def fetch_season_pitstops(self, season: int | str) -> list[dict]:
         """Pit stops for every already-raced round of a season.
 

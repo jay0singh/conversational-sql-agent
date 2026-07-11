@@ -51,6 +51,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    python -m etl.pipeline --season 2024 --dataset pitstops   # pit stops (2011+; load results first)
    python -m etl.pipeline --season 2024 --dataset laps       # lap times (~300 requests, takes minutes)
    python -m etl.pipeline --season 2024 --dataset standings  # driver + constructor standings per round
+   python -m etl.pipeline --season 2024 --dataset status     # finishing-status lookup
    ```
 
    Re-running is safe — every load is an idempotent upsert on natural keys.
@@ -65,7 +66,7 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 6. `pitstops`
 - [x] 7. `laps`
 - [x] 8. `driver_standings` + `constructor_standings`
-- [ ] 9. `status` lookup
+- [x] 9. `status` lookup
 - [ ] 10. Backfill with checkpointing (`etl_state`)
 - [ ] 11. Weekly incremental sync
 - [ ] 12. Post-load data quality checks

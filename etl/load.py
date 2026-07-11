@@ -169,6 +169,12 @@ def load_laps_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     return _load_bare_ref_bundle(conn, bundle, "laps", ["race_id", "driver_id", "lap_number"])
 
 
+def load_status_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    """Upsert status lookup rows; Jolpica's statusId is the natural key."""
+    with conn, conn.cursor() as cur:
+        return {"status": upsert(cur, "status", bundle["status"], ["status_id"])}
+
+
 def load_standings_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     """Upsert a transform_standings() bundle: both standings tables at once.
 

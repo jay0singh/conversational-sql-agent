@@ -272,6 +272,16 @@ def transform_laps(races: list[dict]) -> dict[str, list[dict]]:
     }
 
 
+def transform_status(statuses: list[dict]) -> dict[str, list[dict]]:
+    """Flatten StatusTable entries into status lookup rows (id + text only)."""
+    return {
+        "status": [
+            {"status_id": int(entry["statusId"]), "status": entry["status"]}
+            for entry in statuses
+        ]
+    }
+
+
 def transform_standings(
     driver_lists: list[dict], constructor_lists: list[dict]
 ) -> dict[str, list[dict]]:

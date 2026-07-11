@@ -7,6 +7,7 @@
     python -m etl.pipeline --season 2024 --dataset pitstops   # pit stops (2011+, needs results first)
     python -m etl.pipeline --season 2024 --dataset laps       # lap times (~300 requests/season)
     python -m etl.pipeline --season 2024 --dataset standings  # driver + constructor standings per round
+    python -m etl.pipeline --season 2024 --dataset status     # finishing-status lookup rows
 
 backfill.py and incremental.py (later features) call the same functions.
 """
@@ -25,6 +26,7 @@ from etl.load import (
     load_results_bundle,
     load_sprint_bundle,
     load_standings_bundle,
+    load_status_bundle,
 )
 from etl.transform import (
     transform_calendar,
@@ -34,6 +36,7 @@ from etl.transform import (
     transform_results,
     transform_sprint_results,
     transform_standings,
+    transform_status,
 )
 
 FIRST_PITSTOP_SEASON = 2011  # the API has no pit-stop data before this
@@ -119,6 +122,17 @@ def run_standings(season: int, client: JolpicaClient | None = None) -> dict[str,
         conn.close()
 
 
+def run_status(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
+    client = client or JolpicaClient()
+    statuses = client.fetch_season_status(season)
+    bundle = transform_status(statuses)
+    conn = get_connection()
+    try:
+        return load_status_bundle(conn, bundle)
+    finally:
+        conn.close()
+
+
 RUNNERS = {
     "results": run_results,
     "calendar": run_calendar,
@@ -127,6 +141,7 @@ RUNNERS = {
     "pitstops": run_pitstops,
     "laps": run_laps,
     "standings": run_standings,
+    "status": run_status,
 }
 
 
