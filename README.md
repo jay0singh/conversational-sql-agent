@@ -79,6 +79,18 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 
    Re-running is safe — every load is an idempotent upsert on natural keys.
 
+## Automation
+
+- **Weekly sync** ([`weekly_sync.yml`](.github/workflows/weekly_sync.yml)) —
+  every Monday 06:00 UTC: loads the latest completed round (~22 API requests),
+  then runs the quality gate. Cron fires from the default branch; manual runs
+  via the Actions tab.
+- **Backfill** ([`backfill.yml`](.github/workflows/backfill.yml)) — manual
+  dispatch with an optional season range. A full 2010→current sweep exceeds
+  GitHub's 6-hour job limit, so dispatch it repeatedly — every run resumes
+  from `etl_state` checkpoints.
+- Both need the `SUPABASE_DB_URL` repository secret (Session-pooler string).
+
 ## Roadmap
 
 - [x] 1. Repo scaffolding + Supabase schema migration
@@ -93,4 +105,4 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 10. Backfill with checkpointing (`etl_state`)
 - [x] 11. Weekly incremental sync
 - [x] 12. Post-load data quality checks
-- [ ] 13. GitHub Actions workflows
+- [x] 13. GitHub Actions workflows
