@@ -202,3 +202,34 @@ def transform_qualifying_results(races: list[dict]) -> dict[str, list[dict]]:
         "races": race_rows,
         "qualifying_results": qualifying_rows,
     }
+
+
+def transform_pitstops(races: list[dict]) -> dict[str, list[dict]]:
+    """Flatten per-round pit-stop JSON into table row sets.
+
+    Pit-stop items carry only a bare driverId, so this bundle contains no
+    driver rows — load.py resolves refs against drivers already in the
+    database (load results for the season first).
+    """
+    circuits: dict[str, dict] = {}
+    race_rows: list[dict] = []
+    pitstop_rows: list[dict] = []
+
+    for race in races:
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        race_rows.append(_race_row(race))
+        season, round_no = int(race["season"]), int(race["round"])
+        for stop in race.get("PitStops", []):
+            pitstop_rows.append(
+                {
+                    "season": season,
+                    "round": round_no,
+                    "driver_ref": stop["driverId"],
+                    "stop_number": _int(stop.get("stop")),
+                    "lap": _int(stop.get("lap")),
+                    "time": stop.get("time"),
+                    "duration": stop.get("duration"),
+                }
+            )
+
+    return {"circuits": list(circuits.values()), "races": race_rows, "pitstops": pitstop_rows}

@@ -4,6 +4,7 @@
     python -m etl.pipeline --season 2026 --dataset calendar   # full season schedule
     python -m etl.pipeline --season 2024 --dataset sprint     # sprint results (2021+)
     python -m etl.pipeline --season 2024 --dataset qualifying # qualifying with Q1/Q2/Q3
+    python -m etl.pipeline --season 2024 --dataset pitstops   # pit stops (2011+, needs results first)
 
 backfill.py and incremental.py (later features) call the same functions.
 """
@@ -16,16 +17,20 @@ from etl.extract import JolpicaClient
 from etl.load import (
     get_connection,
     load_calendar_bundle,
+    load_pitstops_bundle,
     load_qualifying_bundle,
     load_results_bundle,
     load_sprint_bundle,
 )
 from etl.transform import (
     transform_calendar,
+    transform_pitstops,
     transform_qualifying_results,
     transform_results,
     transform_sprint_results,
 )
+
+FIRST_PITSTOP_SEASON = 2011  # the API has no pit-stop data before this
 
 
 def run_results(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
@@ -72,11 +77,26 @@ def run_qualifying(season: int, client: JolpicaClient | None = None) -> dict[str
         conn.close()
 
 
+def run_pitstops(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
+    if season < FIRST_PITSTOP_SEASON:
+        # Skip without spending ~25 API requests to learn there's nothing there.
+        return {"circuits": 0, "races": 0, "pitstops": 0}
+    client = client or JolpicaClient()
+    races = client.fetch_season_pitstops(season)
+    bundle = transform_pitstops(races)
+    conn = get_connection()
+    try:
+        return load_pitstops_bundle(conn, bundle)
+    finally:
+        conn.close()
+
+
 RUNNERS = {
     "results": run_results,
     "calendar": run_calendar,
     "sprint": run_sprints,
     "qualifying": run_qualifying,
+    "pitstops": run_pitstops,
 }
 
 

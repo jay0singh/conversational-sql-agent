@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from datetime import date
 
 import requests
 
@@ -125,3 +126,21 @@ class JolpicaClient:
     def fetch_season_qualifying(self, season: int | str) -> list[dict]:
         """All races of a season with their QualifyingResults lists."""
         return self._fetch_season_races(f"{season}/qualifying", "QualifyingResults")
+
+    def fetch_season_pitstops(self, season: int | str) -> list[dict]:
+        """Pit stops for every already-raced round of a season.
+
+        Jolpica serves pit stops per round only, so this costs one calendar
+        request plus one request per raced round (future rounds are skipped —
+        they cannot have stops yet). Pit-stop items carry a bare driverId
+        with no nested Driver object.
+        """
+        today = date.today().isoformat()
+        raced = [r for r in self.fetch_season_calendar(season) if r["date"] <= today]
+        races: list[dict] = []
+        for race in raced:
+            merged = self._fetch_season_races(
+                f"{season}/{race['round']}/pitstops", "PitStops"
+            )
+            races.extend(merged)  # zero or one race per round
+        return races
