@@ -1,0 +1,51 @@
+name: Backfill
+
+# Manual only. GitHub's 6-hour job limit is shorter than a full 2010->current
+# sweep (~13-14h of rate-limited fetching), so dispatch this workflow
+# repeatedly — etl_state checkpoints make every run resume where the last
+# one stopped.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "First season"
+        required: false
+        default: "2010"
+      end:
+        description: "Last season (blank = current year)"
+        required: false
+        default: ""
+
+concurrency:
+  group: etl
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # stop just under the 6h hard limit; checkpoints survive
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          ARGS="--start ${{ inputs.start }}"
+          if [ -n "${{ inputs.end }}" ]; then
+            ARGS="$ARGS --end ${{ inputs.end }}"
+          fi
+          python -m etl.backfill $ARGS
+
+      - name: Data quality gate
+        if: always()  # judge whatever data the run managed to load
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m etl.quality
