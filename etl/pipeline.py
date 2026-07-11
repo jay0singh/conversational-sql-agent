@@ -5,6 +5,7 @@
     python -m etl.pipeline --season 2024 --dataset sprint     # sprint results (2021+)
     python -m etl.pipeline --season 2024 --dataset qualifying # qualifying with Q1/Q2/Q3
     python -m etl.pipeline --season 2024 --dataset pitstops   # pit stops (2011+, needs results first)
+    python -m etl.pipeline --season 2024 --dataset laps       # lap times (~300 requests/season)
 
 backfill.py and incremental.py (later features) call the same functions.
 """
@@ -17,6 +18,7 @@ from etl.extract import JolpicaClient
 from etl.load import (
     get_connection,
     load_calendar_bundle,
+    load_laps_bundle,
     load_pitstops_bundle,
     load_qualifying_bundle,
     load_results_bundle,
@@ -24,6 +26,7 @@ from etl.load import (
 )
 from etl.transform import (
     transform_calendar,
+    transform_laps,
     transform_pitstops,
     transform_qualifying_results,
     transform_results,
@@ -91,12 +94,24 @@ def run_pitstops(season: int, client: JolpicaClient | None = None) -> dict[str, 
         conn.close()
 
 
+def run_laps(season: int, client: JolpicaClient | None = None) -> dict[str, int]:
+    client = client or JolpicaClient()
+    races = client.fetch_season_laps(season)
+    bundle = transform_laps(races)
+    conn = get_connection()
+    try:
+        return load_laps_bundle(conn, bundle)
+    finally:
+        conn.close()
+
+
 RUNNERS = {
     "results": run_results,
     "calendar": run_calendar,
     "sprint": run_sprints,
     "qualifying": run_qualifying,
     "pitstops": run_pitstops,
+    "laps": run_laps,
 }
 
 

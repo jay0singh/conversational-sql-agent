@@ -35,7 +35,9 @@ def upsert(cur, table: str, rows: list[dict], conflict_cols: list[str]) -> int:
         f"insert into {table} ({', '.join(cols)}) values %s "
         f"on conflict ({', '.join(conflict_cols)}) do update set {assignments}"
     )
-    execute_values(cur, sql, [[row[c] for c in cols] for row in rows])
+    # page_size=1000: laps alone is ~25k rows/season; the default of 100
+    # would mean hundreds of round trips through the pooler.
+    execute_values(cur, sql, [[row[c] for c in cols] for row in rows], page_size=1000)
     return len(rows)
 
 
@@ -123,13 +125,14 @@ def load_qualifying_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int
     return _load_fact_bundle(conn, bundle, "qualifying_results")
 
 
-def load_pitstops_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
-    """Upsert a transform_pitstops() bundle.
+def _load_bare_ref_bundle(
+    conn, bundle: dict[str, list[dict]], fact_table: str, conflict_cols: list[str]
+) -> dict[str, int]:
+    """Loader for datasets whose items carry only a bare driverId (pitstops, laps).
 
-    Differs from the generic fact loader: no driver/constructor rows come
-    with the bundle, so driver refs must already exist (load results for
-    the season first) — unknown refs fail loudly rather than silently
-    dropping stops.
+    No driver/constructor rows come with these bundles, so driver refs must
+    already exist (load results for the season first) — unknown refs fail
+    loudly rather than silently dropping rows.
     """
     counts: dict[str, int] = {}
     with conn, conn.cursor() as cur:
@@ -140,21 +143,27 @@ def load_pitstops_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
 
         race_ids = _race_id_map(cur, {row["season"] for row in bundle["races"]})
         driver_ids = _ref_map(cur, "drivers", "driver_ref", "driver_id")
-        missing = {row["driver_ref"] for row in bundle["pitstops"]} - driver_ids.keys()
+        missing = {row["driver_ref"] for row in bundle[fact_table]} - driver_ids.keys()
         if missing:
             raise ValueError(
                 f"unknown driver refs {sorted(missing)} — load results for this season "
-                "before pitstops so the drivers table is populated"
+                f"before {fact_table} so the drivers table is populated"
             )
-        pitstop_rows = [
+        fact_rows = [
             {
                 "race_id": race_ids[(row["season"], row["round"])],
                 "driver_id": driver_ids[row["driver_ref"]],
                 **{k: v for k, v in row.items() if k not in ("season", "round", "driver_ref")},
             }
-            for row in bundle["pitstops"]
+            for row in bundle[fact_table]
         ]
-        counts["pitstops"] = upsert(
-            cur, "pitstops", pitstop_rows, ["race_id", "driver_id", "stop_number"]
-        )
+        counts[fact_table] = upsert(cur, fact_table, fact_rows, conflict_cols)
     return counts
+
+
+def load_pitstops_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    return _load_bare_ref_bundle(conn, bundle, "pitstops", ["race_id", "driver_id", "stop_number"])
+
+
+def load_laps_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    return _load_bare_ref_bundle(conn, bundle, "laps", ["race_id", "driver_id", "lap_number"])

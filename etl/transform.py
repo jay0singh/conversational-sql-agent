@@ -233,3 +233,42 @@ def transform_pitstops(races: list[dict]) -> dict[str, list[dict]]:
             )
 
     return {"circuits": list(circuits.values()), "races": race_rows, "pitstops": pitstop_rows}
+
+
+def transform_laps(races: list[dict]) -> dict[str, list[dict]]:
+    """Flatten per-round lap JSON (Laps[] -> Timings[]) into table row sets.
+
+    One row per driver per lap. Like pit stops, timings carry only a bare
+    driverId, so the bundle has no driver rows and load.py resolves refs
+    against existing drivers. Partial Lap entries from page splits are safe:
+    each timing becomes its own row and the upsert key de-duplicates.
+    """
+    circuits: dict[str, dict] = {}
+    race_rows_by_round: dict[tuple[int, int], dict] = {}
+    lap_rows: list[dict] = []
+
+    for race in races:
+        circuits[race["Circuit"]["circuitId"]] = _circuit_row(race["Circuit"])
+        season, round_no = int(race["season"]), int(race["round"])
+        race_rows_by_round[(season, round_no)] = _race_row(race)
+        for lap in race.get("Laps", []):
+            lap_number = int(lap["number"])
+            for timing in lap.get("Timings", []):
+                lap_rows.append(
+                    {
+                        "season": season,
+                        "round": round_no,
+                        "driver_ref": timing["driverId"],
+                        "lap_number": lap_number,
+                        "position": _int(timing.get("position")),
+                        "time": timing.get("time"),
+                    }
+                )
+
+    return {
+        "circuits": list(circuits.values()),
+        "races": list(race_rows_by_round.values()),
+        "laps": lap_rows,
+    }
+
+

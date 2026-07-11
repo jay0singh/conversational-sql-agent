@@ -127,6 +127,25 @@ class JolpicaClient:
         """All races of a season with their QualifyingResults lists."""
         return self._fetch_season_races(f"{season}/qualifying", "QualifyingResults")
 
+    def fetch_season_laps(self, season: int | str) -> list[dict]:
+        """Lap-by-lap timings for every already-raced round of a season.
+
+        Served per round only, and by far the largest dataset: pagination
+        counts individual timing entries (~1,200 per race), so a round costs
+        ~13 pages and a season ~300 requests — the rate limiter does real
+        work here. A lap whose Timings split across a page boundary shows up
+        as two partial Lap entries; that's fine, because transform emits one
+        row per timing and the upsert key de-duplicates.
+        """
+        today = date.today().isoformat()
+        raced = [r for r in self.fetch_season_calendar(season) if r["date"] <= today]
+        races: list[dict] = []
+        for race in raced:
+            races.extend(
+                self._fetch_season_races(f"{season}/{race['round']}/laps", "Laps")
+            )
+        return races
+
     def fetch_season_pitstops(self, season: int | str) -> list[dict]:
         """Pit stops for every already-raced round of a season.
 
