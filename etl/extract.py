@@ -146,6 +146,48 @@ class JolpicaClient:
             )
         return races
 
+    def _fetch_round_standings(
+        self, season: int | str, round_no: int | str, endpoint: str, list_key: str
+    ) -> dict | None:
+        """One round's StandingsList, merging pages (rarely more than one)."""
+        merged: dict | None = None
+        offset = 0
+        while True:
+            data = self.get_page(f"{season}/{round_no}/{endpoint}", offset=offset)
+            for standings_list in data["StandingsTable"]["StandingsLists"]:
+                if merged is None:
+                    merged = standings_list
+                else:
+                    merged.setdefault(list_key, []).extend(standings_list.get(list_key, []))
+            offset += int(data["limit"])
+            if offset >= int(data["total"]):
+                return merged
+
+    def fetch_season_standings(self, season: int | str) -> tuple[list[dict], list[dict]]:
+        """Per-round driver and constructor standings for raced rounds.
+
+        Returns (driver_standings_lists, constructor_standings_lists), each a
+        list of StandingsList dicts carrying season/round. Standings entries
+        embed full Driver/Constructor objects, so these bundles self-populate
+        their dimension tables. ~2 requests per raced round.
+        """
+        today = date.today().isoformat()
+        raced = [r for r in self.fetch_season_calendar(season) if r["date"] <= today]
+        driver_lists: list[dict] = []
+        constructor_lists: list[dict] = []
+        for race in raced:
+            drivers = self._fetch_round_standings(
+                season, race["round"], "driverStandings", "DriverStandings"
+            )
+            if drivers:
+                driver_lists.append(drivers)
+            constructors = self._fetch_round_standings(
+                season, race["round"], "constructorStandings", "ConstructorStandings"
+            )
+            if constructors:
+                constructor_lists.append(constructors)
+        return driver_lists, constructor_lists
+
     def fetch_season_pitstops(self, season: int | str) -> list[dict]:
         """Pit stops for every already-raced round of a season.
 

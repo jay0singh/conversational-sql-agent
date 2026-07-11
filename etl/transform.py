@@ -272,3 +272,55 @@ def transform_laps(races: list[dict]) -> dict[str, list[dict]]:
     }
 
 
+def transform_standings(
+    driver_lists: list[dict], constructor_lists: list[dict]
+) -> dict[str, list[dict]]:
+    """Flatten per-round StandingsLists into standings + dimension row sets.
+
+    Standings reference no race — (season, round) is their own natural key —
+    and entries embed full Driver/Constructor objects, so the bundle carries
+    its own dimension rows.
+    """
+    drivers: dict[str, dict] = {}
+    constructors: dict[str, dict] = {}
+    driver_rows: list[dict] = []
+    constructor_rows: list[dict] = []
+
+    for standings_list in driver_lists:
+        season, round_no = int(standings_list["season"]), int(standings_list["round"])
+        for entry in standings_list.get("DriverStandings", []):
+            driver = entry["Driver"]
+            drivers[driver["driverId"]] = _driver_row(driver)
+            driver_rows.append(
+                {
+                    "season": season,
+                    "round": round_no,
+                    "driver_ref": driver["driverId"],
+                    "points": float(entry.get("points") or 0),
+                    "position": _int(entry.get("position")),
+                    "wins": _int(entry.get("wins")) or 0,
+                }
+            )
+
+    for standings_list in constructor_lists:
+        season, round_no = int(standings_list["season"]), int(standings_list["round"])
+        for entry in standings_list.get("ConstructorStandings", []):
+            constructor = entry["Constructor"]
+            constructors[constructor["constructorId"]] = _constructor_row(constructor)
+            constructor_rows.append(
+                {
+                    "season": season,
+                    "round": round_no,
+                    "constructor_ref": constructor["constructorId"],
+                    "points": float(entry.get("points") or 0),
+                    "position": _int(entry.get("position")),
+                    "wins": _int(entry.get("wins")) or 0,
+                }
+            )
+
+    return {
+        "drivers": list(drivers.values()),
+        "constructors": list(constructors.values()),
+        "driver_standings": driver_rows,
+        "constructor_standings": constructor_rows,
+    }

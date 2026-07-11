@@ -167,3 +167,45 @@ def load_pitstops_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
 
 def load_laps_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
     return _load_bare_ref_bundle(conn, bundle, "laps", ["race_id", "driver_id", "lap_number"])
+
+
+def load_standings_bundle(conn, bundle: dict[str, list[dict]]) -> dict[str, int]:
+    """Upsert a transform_standings() bundle: both standings tables at once.
+
+    Standings key on (season, round, entity) directly — no race FK — so the
+    only resolution needed is entity ref -> surrogate id.
+    """
+    counts: dict[str, int] = {}
+    with conn, conn.cursor() as cur:
+        counts["drivers"] = upsert(cur, "drivers", bundle["drivers"], ["driver_ref"])
+        counts["constructors"] = upsert(
+            cur, "constructors", bundle["constructors"], ["constructor_ref"]
+        )
+
+        driver_ids = _ref_map(cur, "drivers", "driver_ref", "driver_id")
+        driver_rows = [
+            {
+                "driver_id": driver_ids[row["driver_ref"]],
+                **{k: v for k, v in row.items() if k != "driver_ref"},
+            }
+            for row in bundle["driver_standings"]
+        ]
+        counts["driver_standings"] = upsert(
+            cur, "driver_standings", driver_rows, ["season", "round", "driver_id"]
+        )
+
+        constructor_ids = _ref_map(cur, "constructors", "constructor_ref", "constructor_id")
+        constructor_rows = [
+            {
+                "constructor_id": constructor_ids[row["constructor_ref"]],
+                **{k: v for k, v in row.items() if k != "constructor_ref"},
+            }
+            for row in bundle["constructor_standings"]
+        ]
+        counts["constructor_standings"] = upsert(
+            cur,
+            "constructor_standings",
+            constructor_rows,
+            ["season", "round", "constructor_id"],
+        )
+    return counts
