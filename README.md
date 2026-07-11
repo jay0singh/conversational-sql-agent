@@ -58,6 +58,12 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
    python -m etl.incremental
    ```
 
+   Then gate on data quality (exit 1 turns CI red):
+
+   ```sh
+   python -m etl.quality
+   ```
+
 5. Or load one season × dataset at a time:
 
    ```sh
@@ -86,5 +92,5 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
 - [x] 9. `status` lookup
 - [x] 10. Backfill with checkpointing (`etl_state`)
 - [x] 11. Weekly incremental sync
-- [ ] 12. Post-load data quality checks
+- [x] 12. Post-load data quality checks
 - [ ] 13. GitHub Actions workflows
