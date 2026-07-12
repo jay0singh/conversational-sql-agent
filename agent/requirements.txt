@@ -1,0 +1,6 @@
+# NL->SQL agent dependencies (separate from the root ETL requirements so the
+# GitHub Actions ETL workflows keep their lean installs).
+langgraph
+langchain-groq
+psycopg2-binary
+python-dotenv
