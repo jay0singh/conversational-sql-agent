@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
-from agent.schema import schema_description
+from agent.schema import schema_description, schema_tables
+from agent.validation import validate_sql
 
 load_dotenv()
 
@@ -47,6 +48,7 @@ class AgentState(TypedDict, total=False):
     question: str
     schema_text: str
     sql: str
+    validation_errors: list[str]
 
 
 def intake(state: AgentState) -> AgentState:
@@ -85,15 +87,22 @@ def generate_sql(state: AgentState) -> AgentState:
     return {"sql": _strip_fences(response.content)}
 
 
+def validate(state: AgentState) -> AgentState:
+    sql, errors = validate_sql(state["sql"], schema_tables())
+    return {"sql": sql, "validation_errors": errors}
+
+
 def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("intake", intake)
     graph.add_node("schema_context", schema_context)
     graph.add_node("generate_sql", generate_sql)
+    graph.add_node("validate", validate)
     graph.add_edge(START, "intake")
     graph.add_edge("intake", "schema_context")
     graph.add_edge("schema_context", "generate_sql")
-    graph.add_edge("generate_sql", END)
+    graph.add_edge("generate_sql", "validate")
+    graph.add_edge("validate", END)
     return graph.compile()
 
 
@@ -102,6 +111,11 @@ def main() -> None:
     if not question:
         raise SystemExit('usage: python -m agent.graph "your question"')
     result = build_graph().invoke({"question": question})
+    if result.get("validation_errors"):
+        print("REJECTED:")
+        for error in result["validation_errors"]:
+            print(f"  - {error}")
+        raise SystemExit(1)
     print(result["sql"])
 
 

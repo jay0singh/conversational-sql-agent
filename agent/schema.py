@@ -1,11 +1,11 @@
 """Schema introspection for the NL->SQL agent.
 
-Runs under the read-only f1_agent_ro role, so the description handed to the
-LLM is — by construction — exactly the surface the agent is allowed to query:
-the 12 granted F1 tables. etl_state isn't granted, doesn't appear in
-information_schema under this role, and therefore can't leak into prompts.
-Table comments planted by the migrations (coverage caveats like "pitstops
-exist from 2011") ride along from the catalog.
+Runs under the read-only f1_agent_ro role, so the picture handed to the LLM
+and the validator is — by construction — exactly the surface the agent is
+allowed to query: the 12 granted F1 tables. etl_state isn't granted, doesn't
+appear in information_schema under this role, and therefore can't leak into
+prompts. Table comments planted by the migrations (coverage caveats like
+"pitstops exist from 2011") ride along from the catalog.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def get_agent_connection():
 
 
 @lru_cache(maxsize=1)
-def schema_description() -> str:
-    """One compact, LLM-ready description of every visible table."""
+def _catalog() -> dict[str, dict]:
+    """table -> {columns: [(name, type)...], fks: [...], comment: str|None}."""
     conn = get_agent_connection()
     try:
         with conn, conn.cursor() as cur:
@@ -64,18 +64,32 @@ def schema_description() -> str:
 
     tables: dict[str, dict] = {}
     for table, column, data_type, comment in columns:
-        entry = tables.setdefault(table, {"columns": [], "comment": comment, "fks": []})
-        entry["columns"].append(f"{column} {data_type}")
+        entry = tables.setdefault(table, {"columns": [], "fks": [], "comment": comment})
+        entry["columns"].append((column, data_type))
     for table, column, ref_table, ref_column in fks:
         if table in tables:
             tables[table]["fks"].append(f"{column} -> {ref_table}.{ref_column}")
+    return tables
 
+
+def schema_description() -> str:
+    """One compact, LLM-ready description of every visible table."""
     lines: list[str] = []
-    for table, info in sorted(tables.items()):
+    for table, info in sorted(_catalog().items()):
         lines.append(f"Table {table}:")
-        lines.append(f"  columns: {', '.join(info['columns'])}")
+        lines.append(
+            "  columns: " + ", ".join(f"{name} {dtype}" for name, dtype in info["columns"])
+        )
         if info["fks"]:
             lines.append(f"  foreign keys: {'; '.join(sorted(set(info['fks'])))}")
         if info["comment"]:
             lines.append(f"  note: {info['comment']}")
     return "\n".join(lines)
+
+
+def schema_tables() -> dict[str, set[str]]:
+    """table -> set of column names, for reference validation."""
+    return {
+        table: {name for name, _ in info["columns"]}
+        for table, info in _catalog().items()
+    }

@@ -4,3 +4,4 @@ langgraph
 langchain-groq
 psycopg2-binary
 python-dotenv
+sqlglot
