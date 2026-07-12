@@ -44,9 +44,13 @@ VIOLATION_CHECKS: dict[str, str] = {
         select count(*) from pitstops
         where duration ~ '^[0-9]+(\\.[0-9]+)?$' and duration::numeric <= 0
     """,
+    # Lap times come in three real shapes: 'SS.mmm' (sub-minute laps, e.g.
+    # Sakhir 2020 outer loop), 'M:SS.mmm' (normal), and 'H:MM:SS.mmm' (laps
+    # spanning a red-flag stoppage, e.g. Canada 2011 lap 25).
     "malformed lap times": """
         select count(*) from laps
-        where time is not null and time !~ '^[0-9]+:[0-9]{2}\\.[0-9]{3}$'
+        where time is not null
+          and time !~ '^(([0-9]+:)?[0-9]{1,2}:)?[0-9]{1,2}\\.[0-9]{3}$'
     """,
     "negative points in results": "select count(*) from results where points < 0",
     "non-positive race times (time_millis)": """
@@ -82,11 +86,32 @@ def run_checks() -> int:
                     failures.append(f"{name}: {violations} rows")
 
             for dataset, table in COMPLETENESS.items():
+                # For pitstops, a raced round only *owes* stops if the race ran
+                # a real distance: races of <= 5 laps (Spa 2021 ran 1 lap
+                # behind the safety car) legitimately have none. The lap-count
+                # filter applies only when laps data exists for the season, so
+                # a pitstops-before-laps gate run stays lenient, not wrong.
+                if dataset == "pitstops":
+                    raced_sql = """
+                        select count(*) from races r
+                        where r.season = es.season and r.date < current_date
+                          and (
+                            not exists (
+                              select 1 from laps l join races r2 on r2.race_id = l.race_id
+                              where r2.season = es.season)
+                            or (select coalesce(max(l.lap_number), 0) from laps l
+                                 where l.race_id = r.race_id) > 5
+                          )
+                    """
+                else:
+                    raced_sql = """
+                        select count(*) from races r
+                        where r.season = es.season and r.date < current_date
+                    """
                 cur.execute(
                     f"""
                     select es.season,
-                           (select count(*) from races r
-                             where r.season = es.season and r.date < current_date) as raced,
+                           ({raced_sql}) as raced,
                            (select count(distinct t.race_id) from {table} t
                              join races r on r.race_id = t.race_id
                              where r.season = es.season) as covered
