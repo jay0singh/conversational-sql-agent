@@ -1,6 +1,6 @@
 """LangGraph NL->SQL agent.
 
-Current shape (step 5 of the build):
+Current shape (step 6 of the build):
 
     intake -> schema_context -> generate_sql -> validate -> execute -> format_result
                      ^                |              |          |
@@ -11,7 +11,9 @@ Validation and execution errors feed back to the LLM verbatim so it can
 correct itself; execution runs as the read-only role with its 8-second
 statement timeout. format_result turns the rows (or a graceful failure)
 into a natural-language answer, leaving the raw SQL and rows in state for
-the API/UI to render. Memory is the next step.
+the API/UI to render. A MemorySaver checkpointer persists per-thread
+conversation history so generate_sql can resolve follow-ups ("what about
+2022?") against earlier turns.
 
     python -m agent.graph "Who won the 2021 drivers' championship?"
 """
@@ -20,11 +22,13 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from typing import TypedDict
 
 import psycopg2
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from agent.schema import get_agent_connection, schema_description, schema_tables
@@ -34,6 +38,7 @@ load_dotenv()
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_ATTEMPTS = 3  # initial generation + 2 corrections
+HISTORY_TURNS = 5  # prior (question, sql) pairs replayed for follow-up context
 SUMMARY_ROW_SAMPLE = 50  # rows shown to the summariser (full set stays in state)
 
 SUMMARY_SYSTEM_PROMPT = """You explain the result of a Formula 1 database query in plain \
@@ -83,13 +88,28 @@ class AgentState(TypedDict, total=False):
     error: str  # execution error of the last attempt
     failure: str  # set only when the agent gives up gracefully
     summary: str  # natural-language answer for the user
+    history: list[dict]  # durable across turns: [{question, sql, summary}, ...]
 
 
 def intake(state: AgentState) -> AgentState:
     question = (state.get("question") or "").strip()
     if not question:
         raise ValueError("Empty question.")
-    return {"question": question}
+    # Reset per-turn working fields so state restored from the checkpointer
+    # (attempts/failure/rows from the previous turn) doesn't leak in. history
+    # is intentionally left untouched — it's the durable memory.
+    return {
+        "question": question,
+        "sql": None,
+        "validation_errors": None,
+        "feedback": None,
+        "attempts": 0,
+        "columns": None,
+        "rows": None,
+        "error": None,
+        "failure": None,
+        "summary": None,
+    }
 
 
 def schema_context(state: AgentState) -> AgentState:
@@ -112,10 +132,13 @@ def _strip_fences(text: str) -> str:
 
 
 def generate_sql(state: AgentState) -> AgentState:
-    messages = [
-        ("system", SQL_SYSTEM_PROMPT.format(schema=state["schema_text"])),
-        ("user", state["question"]),
-    ]
+    messages = [("system", SQL_SYSTEM_PROMPT.format(schema=state["schema_text"]))]
+    # Replay recent turns as Q/SQL pairs so follow-ups ("what about 2022?",
+    # "and for Ferrari?") resolve against what was asked and queried before.
+    for turn in (state.get("history") or [])[-HISTORY_TURNS:]:
+        messages.append(("user", turn["question"]))
+        messages.append(("assistant", turn["sql"]))
+    messages.append(("user", state["question"]))
     if state.get("feedback"):
         # Show the model its own failed attempt plus the real error message.
         messages.append(("assistant", state.get("sql", "")))
@@ -176,22 +199,26 @@ def _render_rows(columns: list[str], rows: list[list]) -> str:
 def format_result(state: AgentState) -> AgentState:
     if state.get("failure"):
         # A graceful failure is already user-facing prose; surface it as the answer.
-        return {"summary": state["failure"]}
+        summary = state["failure"]
+    else:
+        columns, rows = state.get("columns", []), state.get("rows", [])
+        if not rows:
+            summary = "I didn't find any matching data for that question."
+        else:
+            response = _llm().invoke(
+                [
+                    ("system", SUMMARY_SYSTEM_PROMPT),
+                    (
+                        "user",
+                        f"Question: {state['question']}\n\n"
+                        f"Result:\n{_render_rows(columns, rows)}",
+                    ),
+                ]
+            )
+            summary = response.content.strip()
 
-    columns, rows = state.get("columns", []), state.get("rows", [])
-    if not rows:
-        return {"summary": "I didn't find any matching data for that question."}
-
-    response = _llm().invoke(
-        [
-            ("system", SUMMARY_SYSTEM_PROMPT),
-            (
-                "user",
-                f"Question: {state['question']}\n\nResult:\n{_render_rows(columns, rows)}",
-            ),
-        ]
-    )
-    return {"summary": response.content.strip()}
+    turn = {"question": state["question"], "sql": state.get("sql", ""), "summary": summary}
+    return {"summary": summary, "history": (state.get("history") or []) + [turn]}
 
 
 def _route_after_validate(state: AgentState) -> str:
@@ -206,7 +233,7 @@ def _route_after_execute(state: AgentState) -> str:
     return "retry" if state.get("attempts", 0) < MAX_ATTEMPTS else "fail"
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("intake", intake)
     graph.add_node("schema_context", schema_context)
@@ -231,14 +258,34 @@ def build_graph():
     )
     graph.add_edge("fail", "format_result")
     graph.add_edge("format_result", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
+
+
+_APP = None
+
+
+def get_app():
+    """Singleton compiled graph with an in-process MemorySaver checkpointer,
+    so conversation history persists across invocations keyed by thread_id."""
+    global _APP
+    if _APP is None:
+        _APP = build_graph(checkpointer=MemorySaver())
+    return _APP
+
+
+def answer(question: str, thread_id: str) -> AgentState:
+    """Run one turn for a thread; history accrues under thread_id in memory."""
+    return get_app().invoke(
+        {"question": question},
+        config={"configurable": {"thread_id": thread_id}},
+    )
 
 
 def main() -> None:
     question = " ".join(sys.argv[1:]).strip()
     if not question:
         raise SystemExit('usage: python -m agent.graph "your question"')
-    result = build_graph().invoke({"question": question})
+    result = answer(question, thread_id=str(uuid.uuid4()))
 
     print(f"[attempts: {result.get('attempts', 0)}]")
     print(f"\nANSWER: {result.get('summary', '')}\n")
