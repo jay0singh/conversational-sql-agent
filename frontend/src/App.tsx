@@ -15,6 +15,31 @@ const STAGE_LABELS: Record<Stage, string> = {
   executing: "Running query…",
 };
 
+// Original racing-style wordmark (speed streaks + italic F1) — deliberately not
+// the trademarked Formula 1 logo.
+function Logo() {
+  return (
+    <svg width="52" height="24" viewBox="0 0 52 24" role="img" aria-label="F1" className="logo">
+      <g fill="var(--accent)">
+        <rect x="0" y="3" width="9" height="3" transform="skewX(-20)" opacity="0.45" />
+        <rect x="0" y="10" width="15" height="3" transform="skewX(-20)" opacity="0.7" />
+        <rect x="0" y="17" width="9" height="3" transform="skewX(-20)" opacity="0.45" />
+      </g>
+      <text
+        x="19"
+        y="20"
+        fontFamily="system-ui, sans-serif"
+        fontSize="22"
+        fontWeight="800"
+        fontStyle="italic"
+        fill="var(--accent)"
+      >
+        F1
+      </text>
+    </svg>
+  );
+}
+
 export default function App() {
   const { messages, busy, sendMessage, reset } = useChat();
   const [input, setInput] = useState("");
@@ -33,7 +58,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🏎️ F1 SQL Agent</h1>
+        <h1>
+          <Logo />
+          <span>SQL Agent</span>
+        </h1>
         <button className="reset" onClick={reset} disabled={busy}>
           New chat
         </button>
