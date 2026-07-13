@@ -1,15 +1,17 @@
 """LangGraph NL->SQL agent.
 
-Current shape (step 4 of the build):
+Current shape (step 5 of the build):
 
-    intake -> schema_context -> generate_sql -> validate -> execute
-                     ^                |              |
-                     |   (errors, attempts left) <---+
-                     +--- feedback loop; after MAX_ATTEMPTS -> graceful failure
+    intake -> schema_context -> generate_sql -> validate -> execute -> format_result
+                     ^                |              |          |
+                     |   (errors, attempts left) <---+----------+
+                     +--- feedback loop; after MAX_ATTEMPTS -> fail -> format_result
 
-Validation errors and execution errors both feed back to the LLM verbatim,
-so it can correct itself; execution runs as the read-only role with its
-8-second statement timeout. Result formatting and memory are next steps.
+Validation and execution errors feed back to the LLM verbatim so it can
+correct itself; execution runs as the read-only role with its 8-second
+statement timeout. format_result turns the rows (or a graceful failure)
+into a natural-language answer, leaving the raw SQL and rows in state for
+the API/UI to render. Memory is the next step.
 
     python -m agent.graph "Who won the 2021 drivers' championship?"
 """
@@ -32,6 +34,15 @@ load_dotenv()
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_ATTEMPTS = 3  # initial generation + 2 corrections
+SUMMARY_ROW_SAMPLE = 50  # rows shown to the summariser (full set stays in state)
+
+SUMMARY_SYSTEM_PROMPT = """You explain the result of a Formula 1 database query in plain \
+English for the person who asked.
+
+Given their question and the result rows, write 1-3 sentences answering the question \
+directly. State the actual numbers and names from the data. If there are no rows, say \
+no matching data was found. Do not mention SQL, tables, columns, or that a query ran. \
+Do not invent values beyond the rows provided."""
 
 SQL_SYSTEM_PROMPT = """You translate questions about Formula 1 into a single PostgreSQL SELECT query.
 
@@ -48,6 +59,10 @@ for that season in the standings table).
 name) with ILIKE for case-insensitivity — never guess *_ref values.
 - Race position 1 means the winner; results.points are race points only (sprints are \
 in sprint_results).
+- To count wins/podiums/results in a season, join results -> races and filter on \
+races.season; do NOT reach a season through driver_standings (that double-counts across \
+rounds and loses the season filter). Use driver_standings only for points/position/wins \
+standings snapshots.
 - Include a LIMIT unless the query is a single-row aggregate.
 - Seasons are integers like 2021; 'current season' means the largest season in races.
 - Duration/time-like columns (pitstops.duration, laps.time, qualifying q1/q2/q3) are \
@@ -67,6 +82,7 @@ class AgentState(TypedDict, total=False):
     rows: list[list]
     error: str  # execution error of the last attempt
     failure: str  # set only when the agent gives up gracefully
+    summary: str  # natural-language answer for the user
 
 
 def intake(state: AgentState) -> AgentState:
@@ -150,6 +166,34 @@ def fail(state: AgentState) -> AgentState:
     }
 
 
+def _render_rows(columns: list[str], rows: list[list]) -> str:
+    header = " | ".join(columns)
+    body = "\n".join(" | ".join(str(v) for v in row) for row in rows[:SUMMARY_ROW_SAMPLE])
+    more = f"\n... ({len(rows)} rows total)" if len(rows) > SUMMARY_ROW_SAMPLE else ""
+    return f"{header}\n{body}{more}"
+
+
+def format_result(state: AgentState) -> AgentState:
+    if state.get("failure"):
+        # A graceful failure is already user-facing prose; surface it as the answer.
+        return {"summary": state["failure"]}
+
+    columns, rows = state.get("columns", []), state.get("rows", [])
+    if not rows:
+        return {"summary": "I didn't find any matching data for that question."}
+
+    response = _llm().invoke(
+        [
+            ("system", SUMMARY_SYSTEM_PROMPT),
+            (
+                "user",
+                f"Question: {state['question']}\n\nResult:\n{_render_rows(columns, rows)}",
+            ),
+        ]
+    )
+    return {"summary": response.content.strip()}
+
+
 def _route_after_validate(state: AgentState) -> str:
     if not state["validation_errors"]:
         return "execute"
@@ -170,6 +214,7 @@ def build_graph():
     graph.add_node("validate", validate)
     graph.add_node("execute", execute)
     graph.add_node("fail", fail)
+    graph.add_node("format_result", format_result)
     graph.add_edge(START, "intake")
     graph.add_edge("intake", "schema_context")
     graph.add_edge("schema_context", "generate_sql")
@@ -182,9 +227,10 @@ def build_graph():
     graph.add_conditional_edges(
         "execute",
         _route_after_execute,
-        {"done": END, "retry": "generate_sql", "fail": "fail"},
+        {"done": "format_result", "retry": "generate_sql", "fail": "fail"},
     )
-    graph.add_edge("fail", END)
+    graph.add_edge("fail", "format_result")
+    graph.add_edge("format_result", END)
     return graph.compile()
 
 
@@ -195,8 +241,8 @@ def main() -> None:
     result = build_graph().invoke({"question": question})
 
     print(f"[attempts: {result.get('attempts', 0)}]")
+    print(f"\nANSWER: {result.get('summary', '')}\n")
     if result.get("failure"):
-        print(result["failure"])
         raise SystemExit(1)
     print(f"SQL: {result['sql']}\n")
     columns, rows = result["columns"], result["rows"]
