@@ -6,6 +6,27 @@
 
 import type { AgentEvent } from "./types";
 
+// Stateful frame splitter: bytes arrive in arbitrary chunks, so a single SSE
+// frame can span two reads. push() buffers and returns whatever frames are now
+// complete. Extracted so it can be unit-tested without a real network stream.
+export class SSEBuffer {
+  private buffer = "";
+
+  push(chunk: string): AgentEvent[] {
+    this.buffer += chunk;
+    const events: AgentEvent[] = [];
+    let sep: number;
+    while ((sep = this.buffer.indexOf("\n\n")) !== -1) {
+      const frame = this.buffer.slice(0, sep).trim();
+      this.buffer = this.buffer.slice(sep + 2);
+      if (frame.startsWith("data:")) {
+        events.push(JSON.parse(frame.slice(frame.indexOf(":") + 1).trim()) as AgentEvent);
+      }
+    }
+    return events;
+  }
+}
+
 export async function* streamQuery(
   question: string,
   threadId: string,
@@ -21,20 +42,13 @@ export async function* streamQuery(
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  const sse = new SSEBuffer();
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let sep: number;
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, sep).trim();
-      buffer = buffer.slice(sep + 2);
-      if (frame.startsWith("data:")) {
-        yield JSON.parse(frame.slice(frame.indexOf(":") + 1).trim()) as AgentEvent;
-      }
+    for (const event of sse.push(decoder.decode(value, { stream: true }))) {
+      yield event;
     }
   }
 }
