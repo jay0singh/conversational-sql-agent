@@ -124,3 +124,11 @@ intake -> schema context -> generate SQL <-> validate <-> execute -> format answ
 - [x] 11. Weekly incremental sync
 - [x] 12. Post-load data quality checks
 - [x] 13. GitHub Actions workflows
+
+### Phase 2 — agent, API, and UI
+
+- [x] Read-only Postgres role (`f1_agent_ro`)
+- [x] LangGraph agent: schema context → SQL generation → validation → execution → summary
+- [x] Error-correction retry loop + thread-level memory (checkpointer)
+- [x] FastAPI streaming `/query` endpoint (SSE)
+- [x] React chat UI with live progress, collapsible SQL, and result tables

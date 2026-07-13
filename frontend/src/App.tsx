@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "./useChat";
+import { ResultView } from "./ResultView";
 import type { Stage } from "./types";
 import "./App.css";
 
@@ -81,17 +82,21 @@ export default function App() {
           </div>
         )}
 
-        {messages.map((m) => (
-          <div key={m.id} className={`msg ${m.role}`}>
-            <div className="bubble">
-              {m.pending ? (
-                <span className="typing">{m.stage ? STAGE_LABELS[m.stage] : "…"}</span>
-              ) : (
-                m.text
-              )}
+        {messages.map((m) => {
+          const hasResult = !m.pending && m.result && !m.result.failure;
+          return (
+            <div key={m.id} className={`msg ${m.role}`}>
+              <div className={`bubble${hasResult ? " has-result" : ""}`}>
+                {m.pending ? (
+                  <span className="typing">{m.stage ? STAGE_LABELS[m.stage] : "…"}</span>
+                ) : (
+                  m.text
+                )}
+                {hasResult && <ResultView result={m.result!} />}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={endRef} />
       </main>
 
