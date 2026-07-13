@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "./useChat";
+import type { Stage } from "./types";
 import "./App.css";
 
 const EXAMPLES = [
@@ -7,6 +8,12 @@ const EXAMPLES = [
   "Top 3 drivers by race wins in 2023",
   "How many races has Lewis Hamilton won since 2010?",
 ];
+
+const STAGE_LABELS: Record<Stage, string> = {
+  generating: "Generating SQL…",
+  validating: "Validating…",
+  executing: "Running query…",
+};
 
 export default function App() {
   const { messages, busy, sendMessage, reset } = useChat();
@@ -50,7 +57,7 @@ export default function App() {
           <div key={m.id} className={`msg ${m.role}`}>
             <div className="bubble">
               {m.pending ? (
-                <span className="typing">…</span>
+                <span className="typing">{m.stage ? STAGE_LABELS[m.stage] : "…"}</span>
               ) : (
                 m.text
               )}

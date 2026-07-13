@@ -5,6 +5,7 @@
 // to /api/query, updating the pending assistant message as events arrive.
 
 import { useRef, useState } from "react";
+import { streamQuery } from "./api";
 import type { Message } from "./types";
 
 function newId(): string {
@@ -23,35 +24,55 @@ export function useChat() {
     threadId.current = crypto.randomUUID();
   }
 
+  function patch(id: string, changes: Partial<Message>) {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...changes } : m)));
+  }
+
   async function sendMessage(question: string) {
     const trimmed = question.trim();
     if (!trimmed || busy) return;
 
     const userMsg: Message = { id: newId(), role: "user", text: trimmed };
-    const assistantMsg: Message = {
-      id: newId(),
-      role: "assistant",
-      text: "",
-      pending: true,
-    };
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    const assistantId = newId();
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { id: assistantId, role: "assistant", text: "", pending: true },
+    ]);
     setBusy(true);
 
-    // --- STUB (step 8): no backend yet. Replaced by a streamed fetch in step 9.
-    await new Promise((r) => setTimeout(r, 400));
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === assistantMsg.id
-          ? {
-              ...m,
-              pending: false,
-              text: `(backend not wired yet) You asked: "${trimmed}"`,
-            }
-          : m,
-      ),
-    );
-    setBusy(false);
-    // --- end stub
+    try {
+      for await (const event of streamQuery(trimmed, threadId.current)) {
+        if (event.type === "status") {
+          patch(assistantId, { stage: event.stage });
+        } else if (event.type === "result") {
+          patch(assistantId, {
+            pending: false,
+            stage: undefined,
+            text: event.summary ?? "(no answer produced)",
+            result: {
+              sql: event.sql,
+              columns: event.columns,
+              rows: event.rows,
+              summary: event.summary,
+              failure: event.failure,
+              attempts: event.attempts,
+            },
+          });
+        } else {
+          patch(assistantId, { pending: false, stage: undefined, text: `Error: ${event.message}` });
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      patch(assistantId, {
+        pending: false,
+        stage: undefined,
+        text: `Could not reach the agent (${message}). Is the backend running?`,
+      });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return { messages, busy, threadId: threadId.current, sendMessage, reset };

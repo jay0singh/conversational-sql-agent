@@ -21,3 +21,9 @@ export interface Message {
   pending?: boolean; // assistant response still arriving
   result?: AgentResult; // populated once the answer lands
 }
+
+// SSE frames emitted by POST /query.
+export type AgentEvent =
+  | { type: "status"; stage: Stage }
+  | ({ type: "result" } & AgentResult)
+  | { type: "error"; message: string };
