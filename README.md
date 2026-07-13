@@ -91,6 +91,24 @@ Jolpica F1 API ──▶ Python ETL (GitHub Actions cron) ──▶ Supabase (Po
   from `etl_state` checkpoints.
 - Both need the `SUPABASE_DB_URL` repository secret (Session-pooler string).
 
+## Agent (NL -> SQL)
+
+A LangGraph pipeline turns natural-language F1 questions into validated,
+read-only SQL and a plain-English answer:
+
+```
+intake -> schema context -> generate SQL <-> validate <-> execute -> format answer
+          (Groq LLM)         (SELECT-only, LIMIT cap, ref-check)  (read-only role, 8s timeout)
+```
+
+- Self-corrects on validation/execution errors (up to 3 attempts), then fails
+  gracefully. Thread-level memory resolves follow-ups ("what about 2022?").
+- Setup: `pip install -r agent/requirements.txt`, add `GROQ_API_KEY` and
+  `AGENT_DB_URL` to `.env` (see `.env.example`).
+- CLI: `python -m agent.graph "Who won the 2021 drivers' championship?"`
+- API: `uvicorn agent.api:app` — `POST /query {question, thread_id}` streams
+  progress + result as Server-Sent Events.
+
 ## Roadmap
 
 - [x] 1. Repo scaffolding + Supabase schema migration

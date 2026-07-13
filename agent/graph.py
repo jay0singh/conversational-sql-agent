@@ -281,6 +281,37 @@ def answer(question: str, thread_id: str) -> AgentState:
     )
 
 
+# Node name -> user-facing progress stage. Nodes without an entry (intake,
+# schema_context, fail, format_result) don't emit a stage of their own.
+NODE_STAGES = {
+    "generate_sql": "generating",
+    "validate": "validating",
+    "execute": "executing",
+}
+
+
+def stream_answer(question: str, thread_id: str):
+    """Yield ('stage', name) as nodes run, then ('result', final_state).
+
+    Uses LangGraph's dual stream mode: 'updates' names each node as it
+    finishes (drives progress events, including repeats on a retry), while
+    'values' carries full state snapshots whose last one is the final state.
+    """
+    config = {"configurable": {"thread_id": thread_id}}
+    final: AgentState = {}
+    for mode, chunk in get_app().stream(
+        {"question": question}, config=config, stream_mode=["updates", "values"]
+    ):
+        if mode == "updates":
+            for node in chunk:
+                stage = NODE_STAGES.get(node)
+                if stage:
+                    yield ("stage", stage)
+        else:  # "values": full state snapshot after this step
+            final = chunk
+    yield ("result", final)
+
+
 def main() -> None:
     question = " ".join(sys.argv[1:]).strip()
     if not question:
