@@ -88,6 +88,7 @@ export default function App() {
           Send
         </button>
       </form>
+      <p className="disclaimer">Data covers the 2010 season to the present.</p>
     </div>
   );
 }
