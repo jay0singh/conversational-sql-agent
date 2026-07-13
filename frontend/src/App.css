@@ -22,8 +22,15 @@
   gap: 10px;
 }
 
-.logo {
+/* Light chip keeps the logo's black "Formula 1" wordmark legible on the
+   dark header (the asset's text is black). */
+.brand {
   display: block;
+  height: 40px;
+  width: auto;
+  background: #fff;
+  border-radius: 6px;
+  padding: 3px 8px;
 }
 
 .reset {
