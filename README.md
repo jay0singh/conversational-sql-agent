@@ -1,5 +1,7 @@
 # F1 Conversational SQL Agent
 
+[![Tests](https://github.com/jay0singh/conversational-sql-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/jay0singh/conversational-sql-agent/actions/workflows/tests.yml)
+
 A chat interface where users ask natural-language questions about Formula 1 race
 data and get back the generated SQL query plus its results.
 
@@ -108,6 +110,25 @@ intake -> schema context -> generate SQL <-> validate <-> execute -> format answ
 - CLI: `python -m agent.graph "Who won the 2021 drivers' championship?"`
 - API: `uvicorn agent.api:app` — `POST /query {question, thread_id}` streams
   progress + result as Server-Sent Events.
+
+## Testing
+
+```sh
+pip install -r requirements.txt -r agent/requirements.txt -r requirements-dev.txt
+pytest                     # deterministic tests + (with .env) live tests
+pytest -m "not db and not llm"   # deterministic only, no DB/LLM needed
+cd frontend && npm test    # frontend (Vitest)
+```
+
+Layers: SQL validation/security, transform functions, the FastAPI endpoint, and
+the frontend SSE parser are deterministic and need no credentials. Safety
+end-to-end (hostile prompts can't mutate data) and the NL→SQL correctness eval
+are marked `db`/`llm` and auto-skip unless `AGENT_DB_URL` and `GROQ_API_KEY` are
+set.
+
+CI ([`tests.yml`](.github/workflows/tests.yml)) runs the deterministic + frontend
+tests on every push and PR; a separate job runs the live tests when
+`AGENT_DB_URL` and `GROQ_API_KEY` are configured as repository secrets.
 
 ## Roadmap
 
