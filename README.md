@@ -111,6 +111,15 @@ intake -> schema context -> generate SQL <-> validate <-> execute -> format answ
 - API: `uvicorn agent.api:app` — `POST /query {question, thread_id}` streams
   progress + result as Server-Sent Events.
 
+## Deployment
+
+The whole app deploys as a **single Docker container** — FastAPI serves the
+`/query` API and the built React app on one origin (no CORS). See
+[`DEPLOY.md`](DEPLOY.md) for step-by-step Hugging Face Spaces instructions; the
+image is host-agnostic (listens on `$PORT`) so it also runs on Render, Koyeb,
+or any Docker host. Set `AGENT_DB_URL` (read-only role) and `GROQ_API_KEY` as
+runtime secrets.
+
 ## Testing
 
 ```sh

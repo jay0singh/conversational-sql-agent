@@ -21,11 +21,13 @@ import decimal
 import json
 import os
 import uuid
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent.graph import stream_answer
@@ -96,7 +98,16 @@ def query(body: QueryRequest) -> StreamingResponse:
     return StreamingResponse(events(), media_type="text/event-stream")
 
 
+# Single-service deploy: serve the built frontend from the same origin, so the
+# browser loads the app and hits /query on one host (no CORS). The directory
+# only exists after `npm run build`; in dev the frontend runs under Vite, so the
+# mount is skipped. Registered last so /health and /query take precedence.
+_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))

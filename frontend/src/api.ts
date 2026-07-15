@@ -6,6 +6,10 @@
 
 import type { AgentEvent } from "./types";
 
+// Dev: the Vite proxy maps /api -> the backend (stripping /api). Production:
+// FastAPI serves this app from its own origin, so the API is at the root.
+const API_BASE = import.meta.env.DEV ? "/api" : "";
+
 // Stateful frame splitter: bytes arrive in arbitrary chunks, so a single SSE
 // frame can span two reads. push() buffers and returns whatever frames are now
 // complete. Extracted so it can be unit-tested without a real network stream.
@@ -31,7 +35,7 @@ export async function* streamQuery(
   question: string,
   threadId: string,
 ): AsyncGenerator<AgentEvent> {
-  const res = await fetch("/api/query", {
+  const res = await fetch(`${API_BASE}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, thread_id: threadId }),
