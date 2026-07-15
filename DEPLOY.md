@@ -1,70 +1,52 @@
-# Deploying to Hugging Face Spaces
+# Deploying
 
 The app deploys as a **single Docker container**: FastAPI serves both the
-`/query` API and the built React app on one origin. Hugging Face Spaces is free
-and needs no credit card.
+`/query` API and the built React app on one origin (no CORS). The image is
+host-agnostic — it listens on `$PORT` — so it runs on any Docker host. Below is
+Render (simplest, free, no credit card); Koyeb is an always-on alternative.
 
 ## What's in the repo for deployment
 
 - **`Dockerfile`** — multi-stage: builds the React frontend with Node, then runs
-  FastAPI (uvicorn) on `$PORT` (default `7860`, which Spaces expects) and serves
-  the built `frontend/dist` alongside the API.
+  FastAPI (uvicorn) on `$PORT` serving the built `frontend/dist` alongside the API.
 - **`.dockerignore`** — keeps the build context small and secrets out of it.
 
-## Steps
+## Render (recommended — free, no card, deploys from GitHub)
 
-1. **Create a free account** at [huggingface.co](https://huggingface.co) (no card).
+Render's free web service sleeps after ~15 min idle (≈50s cold start on the next
+visit), which is fine for a demo.
 
-2. **Create a new Space** → [huggingface.co/new-space](https://huggingface.co/new-space):
-   - Name it (e.g. `f1-sql-agent`).
-   - **SDK: Docker**, template **Blank**.
-   - This creates a Space git repo with a `README.md` whose front-matter marks
-     it as a Docker Space. **Keep that `README.md`.** If you ever need to set it
-     by hand, the front-matter is:
-
-     ```yaml
-     ---
-     title: F1 SQL Agent
-     emoji: 🏎️
-     colorFrom: red
-     colorTo: gray
-     sdk: docker
-     app_port: 7860
-     pinned: false
-     ---
-     ```
-
-3. **Add the app files to the Space repo.** Clone the Space, copy in
-   `Dockerfile`, `.dockerignore`, `agent/`, and `frontend/` from this project
-   (do **not** copy `node_modules`, `.venv`, or `.env`), keep the Space's
-   `README.md`, then commit and push:
-
-   ```sh
-   git clone https://huggingface.co/spaces/<your-user>/f1-sql-agent
-   cd f1-sql-agent
-   # copy Dockerfile, .dockerignore, agent/, frontend/ in here
-   git add .
-   git commit -m "Add F1 SQL Agent"
-   git push
-   ```
-
-4. **Set secrets** in the Space → **Settings → Variables and secrets → New
-   secret** (these are injected as environment variables at runtime):
+1. Sign up at [render.com](https://render.com) with your GitHub account (no card
+   for the free tier).
+2. **New → Web Service**, connect the `conversational-sql-agent` repo, and pick
+   the branch (`dev`, or merge to `main` first and use that).
+3. Render detects the `Dockerfile` automatically. Set:
+   - **Instance type: Free**
+   - Region: nearest to you
+   - (Render injects `PORT`; the Dockerfile already honours it — nothing to set.)
+4. Under **Environment**, add two variables:
    - `AGENT_DB_URL` — the read-only Supabase Session-pooler string (the
      `f1_agent_ro` one from your `.env`).
    - `GROQ_API_KEY` — your Groq key.
+5. **Create Web Service.** Render builds the Dockerfile and deploys; when it goes
+   live the app is at `https://<name>.onrender.com`.
 
-5. **Wait for the build.** The Space builds the Dockerfile and starts the
-   container on port 7860. When status shows **Running**, the app is live at
-   `https://<your-user>-f1-sql-agent.hf.space`.
+## Koyeb (alternative — always-on, no sleep)
+
+Same container, no cold starts. Free instance is smaller (512 MB / 0.1 vCPU) and
+Koyeb may ask for a card only if it can't verify you're human.
+
+1. Sign up at [koyeb.com](https://www.koyeb.com).
+2. **Create Web Service → GitHub**, select the repo and branch.
+3. Builder: **Dockerfile**. Instance: **Free**. Add the same two environment
+   variables (`AGENT_DB_URL`, `GROQ_API_KEY`) as secrets.
+4. Deploy; the app is live at `https://<name>-<org>.koyeb.app`.
 
 ## Notes
 
 - The read-only role and 8-second statement timeout still apply in production —
   the deployed agent can only run guarded `SELECT`s. Keep the ETL's full-access
-  `SUPABASE_DB_URL` **out** of the Space; the agent only needs `AGENT_DB_URL`.
-- Conversation memory is in-process (`MemorySaver`), so it resets if the Space
+  `SUPABASE_DB_URL` **out** of the deployment; the agent only needs `AGENT_DB_URL`.
+- Conversation memory is in-process (`MemorySaver`), so it resets if the service
   restarts or sleeps — fine for a demo. Swap to a Postgres-backed checkpointer
   later if you want it to persist.
-- The container is host-agnostic (listens on `$PORT`), so the same image runs on
-  Render, Koyeb, or anywhere that runs a Docker container.

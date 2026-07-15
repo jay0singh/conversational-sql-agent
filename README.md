@@ -115,10 +115,10 @@ intake -> schema context -> generate SQL <-> validate <-> execute -> format answ
 
 The whole app deploys as a **single Docker container** — FastAPI serves the
 `/query` API and the built React app on one origin (no CORS). See
-[`DEPLOY.md`](DEPLOY.md) for step-by-step Hugging Face Spaces instructions; the
-image is host-agnostic (listens on `$PORT`) so it also runs on Render, Koyeb,
-or any Docker host. Set `AGENT_DB_URL` (read-only role) and `GROQ_API_KEY` as
-runtime secrets.
+[`DEPLOY.md`](DEPLOY.md) for step-by-step instructions (Render — free, no credit
+card, deploys from GitHub; Koyeb as an always-on alternative). The image is
+host-agnostic (listens on `$PORT`) so it runs on any Docker host. Set
+`AGENT_DB_URL` (read-only role) and `GROQ_API_KEY` as runtime secrets.
 
 ## Testing
 
