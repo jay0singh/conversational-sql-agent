@@ -41,13 +41,40 @@ MAX_ATTEMPTS = 3  # initial generation + 2 corrections
 HISTORY_TURNS = 5  # prior (question, sql) pairs replayed for follow-up context
 SUMMARY_ROW_SAMPLE = 50  # rows shown to the summariser (full set stays in state)
 
+ROUTER_SYSTEM_PROMPT = """You route messages for a Formula 1 question-answering app whose \
+database covers F1 races from 2010 to the present.
+
+Reply with exactly one word, nothing else:
+- "data" — the message asks for specific information that an F1 race database could hold: \
+winners, results, standings, championships, pole positions, qualifying, pit stops, lap \
+times, points, seasons, drivers, teams, circuits (including subjective "who's the \
+best/GOAT" questions, which we answer with objective stats).
+- "chat" — a greeting, thanks, small talk, a question about what you can do, or anything \
+that is not a request for specific F1 data."""
+
+CHAT_SYSTEM_PROMPT = """You are a friendly assistant for a Formula 1 question-answering \
+app. Its data covers F1 races from 2010 to the present, and it can answer about race \
+results, winners, championship standings, qualifying, pole positions, pit stops, lap \
+times, drivers, constructors, and circuits.
+
+Reply to the user's message in 1-2 short sentences. Greet back if greeted; if they ask \
+what you can do, describe the above briefly and invite a question. Do not state any \
+specific race facts, numbers, or results here — those come from the database, not you."""
+
 SUMMARY_SYSTEM_PROMPT = """You explain the result of a Formula 1 database query in plain \
 English for the person who asked.
 
 Given their question and the result rows, write 1-3 sentences answering the question \
 directly. State the actual numbers and names from the data. If there are no rows, say \
 no matching data was found. Do not mention SQL, tables, columns, or that a query ran. \
-Do not invent values beyond the rows provided."""
+Do not invent values beyond the rows provided.
+
+If the question is subjective (the "greatest", "best", "GOAT", "most talented", a \
+favourite) or otherwise can't be objectively settled from race data, do NOT state a pick \
+as fact. Say plainly that greatness/opinion isn't something the data can decide, then give \
+the objective statistic from the rows as context (e.g. who has the most wins in this \
+data). If the rows say the topic is out of scope or don't address the question, say the \
+data only covers Formula 1 from 2010 onward and doesn't answer it."""
 
 SQL_SYSTEM_PROMPT = """You translate questions about Formula 1 into a single PostgreSQL SELECT query.
 
@@ -73,11 +100,19 @@ standings snapshots.
 - Duration/time-like columns (pitstops.duration, laps.time, qualifying q1/q2/q3) are \
 text and may hold empty strings or 'M:SS.mmm' formats. Before numeric math, filter to \
 plain numbers (col ~ '^[0-9.]+$') and cast via nullif(col, '')::numeric.
+- Subjective questions ("who is the greatest / best / GOAT / most talented") have no \
+objective answer in the data. Interpret them ONLY as the driver with the most race wins \
+(count results.position = 1 grouped by driver across all seasons, top 1), so the result \
+is deterministic — the summary will make clear this is an objective proxy, not a verdict.
+- The data only covers Formula 1 seasons 2010 to the present. Do not attempt to answer \
+about earlier seasons or non-F1 topics; if a question is outside this data, still emit a \
+harmless single-row query like `SELECT 'out of scope' AS note`.
 """
 
 
 class AgentState(TypedDict, total=False):
     question: str
+    kind: str  # "data" (run SQL) or "chat" (conversational reply, no SQL)
     schema_text: str
     sql: str
     validation_errors: list[str]
@@ -109,6 +144,31 @@ def intake(state: AgentState) -> AgentState:
         "error": None,
         "failure": None,
         "summary": None,
+    }
+
+
+def route(state: AgentState) -> AgentState:
+    """Classify the message: a data question (run SQL) or chat (reply directly)."""
+    response = _llm().invoke(
+        [("system", ROUTER_SYSTEM_PROMPT), ("user", state["question"])]
+    )
+    kind = "chat" if "chat" in response.content.strip().lower() else "data"
+    return {"kind": kind}
+
+
+def chat_reply(state: AgentState) -> AgentState:
+    """Friendly conversational reply for non-data messages — no SQL, no rows."""
+    response = _llm().invoke(
+        [("system", CHAT_SYSTEM_PROMPT), ("user", state["question"])]
+    )
+    summary = response.content.strip()
+    turn = {"question": state["question"], "sql": "", "summary": summary}
+    return {
+        "summary": summary,
+        "sql": None,
+        "columns": [],
+        "rows": [],
+        "history": (state.get("history") or []) + [turn],
     }
 
 
@@ -236,6 +296,8 @@ def _route_after_execute(state: AgentState) -> str:
 def build_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("intake", intake)
+    graph.add_node("route", route)
+    graph.add_node("chat_reply", chat_reply)
     graph.add_node("schema_context", schema_context)
     graph.add_node("generate_sql", generate_sql)
     graph.add_node("validate", validate)
@@ -243,7 +305,13 @@ def build_graph(checkpointer=None):
     graph.add_node("fail", fail)
     graph.add_node("format_result", format_result)
     graph.add_edge(START, "intake")
-    graph.add_edge("intake", "schema_context")
+    graph.add_edge("intake", "route")
+    graph.add_conditional_edges(
+        "route",
+        lambda s: s["kind"],
+        {"data": "schema_context", "chat": "chat_reply"},
+    )
+    graph.add_edge("chat_reply", END)
     graph.add_edge("schema_context", "generate_sql")
     graph.add_edge("generate_sql", "validate")
     graph.add_conditional_edges(

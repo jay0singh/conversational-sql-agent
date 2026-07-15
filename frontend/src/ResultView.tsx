@@ -12,6 +12,9 @@ function cell(value: unknown): string {
 export function ResultView({ result }: { result: AgentResult }) {
   const { sql, columns, rows, attempts } = result;
 
+  // Chat replies carry no SQL and no rows — nothing to show below the text.
+  if (!sql && rows.length === 0) return null;
+
   return (
     <div className="result">
       {attempts > 1 && (
