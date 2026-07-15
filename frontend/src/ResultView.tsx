@@ -28,29 +28,31 @@ export function ResultView({ result }: { result: AgentResult }) {
       )}
 
       {rows.length > 0 && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {columns.map((c) => (
-                  <th key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i}>
-                  {row.map((value, j) => (
-                    <td key={j}>{cell(value)}</td>
+        <details className="table-details">
+          <summary>
+            Results ({rows.length} row{rows.length === 1 ? "" : "s"})
+          </summary>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {columns.map((c) => (
+                    <th key={c}>{c}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="rowcount">
-            {rows.length} row{rows.length === 1 ? "" : "s"}
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i}>
+                    {row.map((value, j) => (
+                      <td key={j}>{cell(value)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </details>
       )}
     </div>
   );

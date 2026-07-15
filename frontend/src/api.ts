@@ -31,6 +31,13 @@ export class SSEBuffer {
   }
 }
 
+// Free hosts (Render) sleep when idle and take ~50s to wake. Pinging health on
+// page load starts the wake early, so the server is usually up by the time the
+// user submits their first question. Fire-and-forget.
+export function warmBackend(): void {
+  fetch(`${API_BASE}/health`).catch(() => {});
+}
+
 export async function* streamQuery(
   question: string,
   threadId: string,

@@ -64,7 +64,9 @@ export default function App() {
             <div key={m.id} className={`msg ${m.role}`}>
               <div className={`bubble${hasResult ? " has-result" : ""}`}>
                 {m.pending ? (
-                  <span className="typing">{m.stage ? STAGE_LABELS[m.stage] : "…"}</span>
+                  <span className="typing">
+                    {m.text || (m.stage ? STAGE_LABELS[m.stage] : "…")}
+                  </span>
                 ) : (
                   m.text
                 )}

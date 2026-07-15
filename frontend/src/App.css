@@ -157,7 +157,18 @@
   white-space: pre;
 }
 
+.table-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+}
+.table-details summary:hover {
+  color: var(--text);
+}
+
 .table-wrap {
+  margin-top: 8px;
   overflow-x: auto;
   max-height: 340px;
   overflow-y: auto;
