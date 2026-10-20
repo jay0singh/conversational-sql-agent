@@ -36,7 +36,7 @@ from agent.validation import validate_sql
 
 load_dotenv()
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_ATTEMPTS = 3  # initial generation + 2 corrections
 HISTORY_TURNS = 5  # prior (question, sql) pairs replayed for follow-up context
 SUMMARY_ROW_SAMPLE = 50  # rows shown to the summariser (full set stays in state)
